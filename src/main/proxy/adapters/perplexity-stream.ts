@@ -328,6 +328,12 @@ export class PerplexityStreamHandler {
   }
 
   private handleDone(transStream: PassThrough): void {
+    // If we haven't sent the first chunk (role: assistant), send it now
+    // This handles cases where the model doesn't send any content chunks
+    if (this.isFirstChunk) {
+      transStream.write(this.createChunk({ role: 'assistant' }))
+    }
+
     const baseChunk = createBaseChunk(this.sessionId, this.model, this.created)
     const flushChunks = flushToolCallBuffer(this.toolCallState, baseChunk, 'perplexity')
     for (const outChunk of flushChunks) {
@@ -340,7 +346,7 @@ export class PerplexityStreamHandler {
         .sort((a, b) => a.cite_index - b.cite_index)
         .map(r => `[${r.cite_index}]: [${r.title}](${r.url})`)
         .join('\n')
-      
+
       if (citations) {
         transStream.write(this.createChunk({ content: `\n\n${citations}` }))
       }
@@ -351,7 +357,7 @@ export class PerplexityStreamHandler {
     transStream.write(this.createChunk({}, finishReason))
     transStream.write('data: [DONE]\n\n')
     transStream.end()
-    
+
     this.onEnd?.()
   }
 

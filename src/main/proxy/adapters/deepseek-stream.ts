@@ -420,6 +420,13 @@ export class DeepSeekStreamHandler {
     if (this.isDone) return
     this.isDone = true
 
+    // If we haven't sent the first chunk (role: assistant), send it now
+    // This handles cases where the model doesn't send any content chunks
+    if (this.isFirstChunk) {
+      transStream.write(this.createChunk({ role: 'assistant' }))
+      this.isFirstChunk = false
+    }
+
     // Flush tool call buffer before finishing
     const baseChunk = createBaseChunk(`${this.sessionId}@${this.messageId}`, this.model, this.created)
     const flushChunks = this.toolStreamParser?.flush(baseChunk) ?? []
@@ -433,7 +440,7 @@ export class DeepSeekStreamHandler {
 
     if (this.searchResults.length > 0 && !isSearchSilentModel) {
       const citations = DeepSeekStreamHandler.formatSearchCitations(this.searchResults)
-      
+
       if (citations) {
         transStream.write(this.createChunk({ content: `\n\n${citations}` }))
       }
@@ -445,7 +452,7 @@ export class DeepSeekStreamHandler {
     transStream.write(this.createChunk({}, finishReason))
     transStream.write('data: [DONE]\n\n')
     transStream.end()
-    
+
     // Call end callback
     this.onEnd?.()
   }
