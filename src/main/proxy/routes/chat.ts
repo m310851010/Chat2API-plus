@@ -381,6 +381,23 @@ router.post('/completions', async (ctx: Context) => {
           collectedContent += chunk.toString()
         })
 
+        result.stream.on('error', (err: Error) => {
+          console.error('[Chat] SkipTransform stream error:', err.message)
+          wrapperStream.write(`data: ${JSON.stringify({
+            id: requestId,
+            object: 'chat.completion.chunk',
+            created: Math.floor(Date.now() / 1000),
+            model: actualModel,
+            choices: [{
+              index: 0,
+              delta: { content: `\n\n[Error: ${err.message}]` },
+              finish_reason: 'stop',
+            }],
+          })}\n\n`)
+          wrapperStream.write('data: [DONE]\n\n')
+          wrapperStream.end()
+        })
+
         result.stream.pipe(wrapperStream, { end: false })
 
         // When source stream ends normally, update log and end wrapper

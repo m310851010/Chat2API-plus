@@ -317,6 +317,23 @@ export class StreamHandler {
       },
 
       flush(callback) {
+        // If we haven't sent the first chunk (role: assistant), send it now
+        // This handles cases where the model doesn't send any content chunks
+        if (isFirstChunk) {
+          this.push(formatter.formatJSON({
+            id: responseId,
+            object: 'chat.completion.chunk',
+            created,
+            model,
+            choices: [{
+              index: 0,
+              delta: { role: 'assistant' },
+              finish_reason: null,
+            }],
+          }))
+          isFirstChunk = false
+        }
+
         if (contentBuffer) {
           // Final check for tool calls in buffer
           const { content: cleanContent, toolCalls } = parseToolCalls(contentBuffer)
@@ -341,7 +358,7 @@ export class StreamHandler {
             }
           } else {
             // No tool calls, just flush content
-            const finalData = transformChunk({ content: contentBuffer }, model, responseId, created, isFirstChunk)
+            const finalData = transformChunk({ content: contentBuffer }, model, responseId, created, false)
             if (finalData) {
               this.push(formatter.formatJSON(finalData))
             }
@@ -399,8 +416,20 @@ export class StreamHandler {
     const finishReason = data.choices?.[0]?.finish_reason || data.finish_reason || null
 
     // Allow null content when there are tool_calls or finish_reason
+    // Empty content is valid - should output an empty chunk for streaming consistency
     if (delta.content === undefined && !delta.reasoning_content && !delta.tool_calls && !finishReason) {
-      return null
+      // Still output a chunk for streaming consistency, just with empty delta
+      return {
+        id: responseId,
+        object: 'chat.completion.chunk',
+        created,
+        model,
+        choices: [{
+          index: 0,
+          delta: isFirstChunk ? { role: 'assistant' } : {},
+          finish_reason: null,
+        }],
+      }
     }
 
     return {

@@ -316,6 +316,12 @@ export class DeepSeekStreamHandler {
   }
 
   private handleDone(transStream: PassThrough, isFoldModel: boolean, isSearchSilentModel: boolean): void {
+    // If we haven't sent the first chunk (role: assistant), send it now
+    // This handles cases where the model doesn't send any content chunks
+    if (this.isFirstChunk) {
+      transStream.write(this.createChunk({ role: 'assistant' }))
+    }
+
     // Flush tool call buffer before finishing
     const baseChunk = createBaseChunk(`${this.sessionId}@${this.messageId}`, this.model, this.created)
     const flushChunks = flushToolCallBuffer(this.toolCallState, baseChunk, 'deepseek')
@@ -333,7 +339,7 @@ export class DeepSeekStreamHandler {
         .sort((a, b) => a.cite_index - b.cite_index)
         .map(r => `[${r.cite_index}]: [${r.title}](${r.url})`)
         .join('\n')
-      
+
       if (citations) {
         transStream.write(this.createChunk({ content: `\n\n${citations}` }))
       }
@@ -345,7 +351,7 @@ export class DeepSeekStreamHandler {
     transStream.write(this.createChunk({}, finishReason))
     transStream.write('data: [DONE]\n\n')
     transStream.end()
-    
+
     // Call end callback
     this.onEnd?.()
   }
