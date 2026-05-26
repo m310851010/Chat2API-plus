@@ -614,6 +614,41 @@ const contextManagementAPI = {
     ipcRenderer.invoke(IpcChannels.CONTEXT_MANAGEMENT_UPDATE_CONFIG, updates),
 }
 
+const toolCallingAPI = {
+  async getStatus() {
+    const config = await configAPI.get()
+    const host = config.proxyHost || '127.0.0.1'
+    const port = config.managementApi?.managementApiPort || config.proxyPort
+    const secret = config.managementApi?.managementApiSecret
+    if (!secret) return null
+
+    const response = await fetch(`http://${host}:${port}/v0/management/tool-calling/status`, {
+      headers: { Authorization: `Bearer ${secret}` },
+    })
+    return response.json()
+  },
+
+  async runSmoke(input: { clientAdapterId: string }) {
+    const config = await configAPI.get()
+    const host = config.proxyHost || '127.0.0.1'
+    const port = config.managementApi?.managementApiPort || config.proxyPort
+    const secret = config.managementApi?.managementApiSecret
+    if (!secret) {
+      return { success: false, error: { message: 'Management API secret is not configured.' } }
+    }
+
+    const response = await fetch(`http://${host}:${port}/v0/management/tool-calling/smoke`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    })
+    return response.json()
+  },
+}
+
 const trayAPI = {
   openDashboard: (): void => 
     ipcRenderer.send('tray:open-dashboard'),
@@ -640,6 +675,7 @@ const electronAPI = {
   session: sessionAPI,
   managementApi: managementApiAPI,
   contextManagement: contextManagementAPI,
+  toolCalling: toolCallingAPI,
   tray: trayAPI,
   
   on: (channel: string, callback: (...args: unknown[]) => void) => {

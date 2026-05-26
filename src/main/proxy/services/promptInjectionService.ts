@@ -50,7 +50,7 @@ interface InjectionConfig {
  */
 const DEFAULT_CONFIG: InjectionConfig = {
   mode: 'auto',
-  defaultFormat: 'bracket',
+  defaultFormat: 'xml',
   customPromptTemplate: undefined,
   enableToolCallParsing: true,
 }

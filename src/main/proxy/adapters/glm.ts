@@ -15,12 +15,11 @@ import path from 'path'
 import { toolsToSystemPrompt, TOOL_WRAP_HINT, hasToolPromptInjected } from '../utils/tools'
 import { parseToolCallsFromText } from '../utils/toolParser'
 import { 
-  createToolCallState, 
-  processStreamContent, 
-  flushToolCallBuffer,
   createBaseChunk,
-  ToolCallState 
 } from '../utils/streamToolHandler'
+import { getProviderToolProfile } from '../toolCalling/providerProfiles'
+import { ToolStreamParser } from '../toolCalling/ToolStreamParser'
+import type { ToolCallingPlan } from '../toolCalling/types'
 
 const GLM_API_BASE = 'https://chatglm.cn/chatglm'
 const DEFAULT_ASSISTANT_ID = '65940acff94777010aa6b796'
@@ -279,6 +278,7 @@ export class GLMAdapter {
   }
 
   private messagesToPrompt(messages: GLMMessage[], refs: any[] = [], toolsPrompt?: string, isMultiTurn: boolean = false): { role: string; content: any[] }[] {
+    const toolProfile = getProviderToolProfile('glm')
     // Separate image refs and file refs
     const imageRefs = refs.filter((ref) => ref.width !== undefined || ref.height !== undefined || ref.image_url)
     const fileRefs = refs.filter((ref) => !ref.width && !ref.height && !ref.image_url)
@@ -311,17 +311,24 @@ export class GLMAdapter {
     const processedMessages = messages.map(msg => {
       // Handle tool calls in assistant message
       if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
-        const toolCallsText = msg.tool_calls.map(tc => {
-          return `[call:${tc.function.name}]${tc.function.arguments}[/call]`
-        }).join('\n')
-        return { ...msg, content: `[function_calls]\n${toolCallsText}\n[/function_calls]` }
+        return {
+          ...msg,
+          content: toolProfile.formatAssistantToolCalls(msg.tool_calls.map(tc => ({
+            id: tc.id,
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          }))),
+        }
       }
       // Handle tool response message
       if (msg.role === 'tool' && msg.tool_call_id) {
         return { 
           ...msg, 
           role: 'user' as const,
-          content: `[TOOL_RESULT for ${msg.tool_call_id}] ${msg.content || ''}` 
+          content: toolProfile.formatToolResult({
+            toolCallId: msg.tool_call_id,
+            content: String(msg.content || ''),
+          }),
         }
       }
       return msg
@@ -699,13 +706,15 @@ export class GLMStreamHandler {
   private model: string
   private created: number
   private onEnd?: () => void
-  private toolCallState: ToolCallState
+  private toolStreamParser?: ToolStreamParser
+  private toolCallingPlan?: ToolCallingPlan
 
-  constructor(model: string, onEnd?: () => void, initialConversationId?: string) {
+  constructor(model: string, onEnd?: () => void, initialConversationId?: string, toolCallingPlan?: ToolCallingPlan) {
     this.model = model
     this.created = Math.floor(Date.now() / 1000)
     this.onEnd = onEnd
-    this.toolCallState = createToolCallState()
+    this.toolCallingPlan = toolCallingPlan
+    this.toolStreamParser = toolCallingPlan?.shouldParseResponse ? new ToolStreamParser(toolCallingPlan) : undefined
     if (initialConversationId) {
       this.conversationId = initialConversationId
     }
@@ -830,14 +839,13 @@ export class GLMStreamHandler {
               sentContent += chunk
             }
             
-            // Process tool call interception - use toolCallState's buffer for accumulation
+            // Process tool call interception with shared parser buffering.
             const baseChunk = createBaseChunk(this.conversationId, this.model, this.created)
-            const { chunks: outputChunks } = processStreamContent(
-              chunk, 
-              this.toolCallState, 
-              baseChunk, 
-              !sentRole,
-              'glm'
+            const outputChunks = this.toolStreamParser?.push(chunk, baseChunk, !sentRole) ?? (
+              chunk ? [{
+                ...baseChunk,
+                choices: [{ index: 0, delta: { ...(!sentRole ? { role: 'assistant' } : {}), content: chunk }, finish_reason: null }],
+              }] : []
             )
 
             for (const outChunk of outputChunks) {
@@ -848,13 +856,13 @@ export class GLMStreamHandler {
           } else {
             // Flush any remaining tool call buffer before finishing
             const baseChunk = createBaseChunk(this.conversationId, this.model, this.created)
-            const flushChunks = flushToolCallBuffer(this.toolCallState, baseChunk, 'glm')
+            const flushChunks = this.toolStreamParser?.flush(baseChunk) ?? []
             for (const outChunk of flushChunks) {
               transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
             }
 
             // Determine finish_reason based on whether we had tool calls
-            const finishReason = this.toolCallState.hasEmittedToolCall ? 'tool_calls' : 'stop'
+            const finishReason = this.toolStreamParser?.hasEmittedToolCall() ? 'tool_calls' : 'stop'
 
             transStream.write(
               `data: ${JSON.stringify({
@@ -892,11 +900,11 @@ export class GLMStreamHandler {
       console.error('[GLM] Stream error:', err.message)
       // Flush any remaining tool call buffer
       const baseChunk = createBaseChunk(this.conversationId, this.model, this.created)
-      const flushChunks = flushToolCallBuffer(this.toolCallState, baseChunk, 'glm')
+      const flushChunks = this.toolStreamParser?.flush(baseChunk) ?? []
       for (const outChunk of flushChunks) {
         transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
       }
-      const finishReason = this.toolCallState.hasEmittedToolCall ? 'tool_calls' : 'stop'
+      const finishReason = this.toolStreamParser?.hasEmittedToolCall() ? 'tool_calls' : 'stop'
       transStream.write(
         `data: ${JSON.stringify({
           id: this.conversationId,
@@ -916,11 +924,11 @@ export class GLMStreamHandler {
       // Only send finish if we haven't already
       if (!transStream.closed) {
         const baseChunk = createBaseChunk(this.conversationId, this.model, this.created)
-        const flushChunks = flushToolCallBuffer(this.toolCallState, baseChunk, 'glm')
+        const flushChunks = this.toolStreamParser?.flush(baseChunk) ?? []
         for (const outChunk of flushChunks) {
           transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
         }
-        const finishReason = this.toolCallState.hasEmittedToolCall ? 'tool_calls' : 'stop'
+        const finishReason = this.toolStreamParser?.hasEmittedToolCall() ? 'tool_calls' : 'stop'
         transStream.write(
           `data: ${JSON.stringify({
             id: this.conversationId,
@@ -1027,7 +1035,9 @@ export class GLMStreamHandler {
                 if (partReasoning) fullReasoning += (fullReasoning.length > 0 ? '\n' : '') + partReasoning
               })
 
-              const { content: cleanContent, toolCalls } = parseToolCallsFromText(fullText, 'glm')
+              const { content: cleanContent, toolCalls } = this.toolCallingPlan?.shouldParseResponse
+                ? { content: fullText, toolCalls: [] }
+                : parseToolCallsFromText(fullText, 'glm')
 
               resolve({
                 id: this.conversationId,

@@ -30,6 +30,11 @@ export type LoadBalanceStrategy = 'round-robin' | 'fill-first' | 'failover'
 
 export type Theme = 'light' | 'dark' | 'system'
 
+export type {
+  LegacyToolPromptConfig,
+  ToolCallingConfig,
+} from './toolCalling'
+
 export interface Account {
   id: string
   providerId: string
@@ -101,7 +106,10 @@ export interface AppConfig {
   enableApiKey: boolean
   oauthProxyMode: 'system' | 'none'
   sessionConfig: SessionConfig
-  toolPromptConfig: ToolPromptConfig
+  toolCallingConfig: ToolCallingConfig
+  toolPromptConfig?: LegacyToolPromptConfig
+  managementApi: ManagementApiConfig
+  contextManagement?: unknown
   language: 'zh-CN' | 'en-US'
 }
 
@@ -184,13 +192,6 @@ export interface SystemPrompt {
   groups?: string[]
   createdAt: number
   updatedAt: number
-}
-
-export interface ToolPromptConfig {
-  mode: 'auto' | 'always' | 'never'
-  defaultFormat: 'bracket' | 'xml'
-  customPromptTemplate?: string
-  enableToolCallParsing: boolean
 }
 
 export interface SessionConfig {
@@ -361,7 +362,8 @@ export interface ConfigUpdateRequest {
   enableApiKey?: boolean
   oauthProxyMode?: 'system' | 'none'
   sessionConfig?: SessionConfig
-  toolPromptConfig?: ToolPromptConfig
+  toolCallingConfig?: Partial<ToolCallingConfig>
+  toolPromptConfig?: LegacyToolPromptConfig
   managementApi?: ManagementApiConfig
 }
 

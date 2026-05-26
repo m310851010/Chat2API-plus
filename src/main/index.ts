@@ -111,7 +111,7 @@ async function loadAppContent(mainWindow: BrowserWindow): Promise<void> {
 
   if (isDev) {
     try {
-      await loadUrl('http://localhost:5173')
+      await loadUrl(process.env.ELECTRON_RENDERER_URL || 'http://localhost:5173')
     } catch (error) {
       console.error('Failed to load development server:', error)
     }

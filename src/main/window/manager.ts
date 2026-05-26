@@ -50,7 +50,7 @@ export function createWindow(options: WindowOptions = {}): BrowserWindow {
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
     const isDev = process.env.NODE_ENV === 'development'
-    const devUrl = 'http://localhost:5173'
+    const devUrl = process.env.ELECTRON_RENDERER_URL || 'http://localhost:5173'
     const prodPrefix = 'file://'
 
     if (isDev) {

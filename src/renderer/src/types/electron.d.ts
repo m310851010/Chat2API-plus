@@ -19,7 +19,8 @@ import type {
   ApiKey,
   SystemPrompt,
   PromptType,
-  ToolPromptConfig,
+  ToolCallingConfig,
+  LegacyToolPromptConfig,
   EffectiveModel,
 } from '../../../shared/types'
 
@@ -44,7 +45,8 @@ export type {
   ApiKey,
   SystemPrompt,
   PromptType,
-  ToolPromptConfig,
+  ToolCallingConfig,
+  LegacyToolPromptConfig,
   EffectiveModel,
 }
 
@@ -455,6 +457,11 @@ interface ContextManagementAPI {
   updateConfig: (updates: Partial<ContextManagementConfig>) => Promise<ContextManagementConfig>
 }
 
+interface ToolCallingAPI {
+  getStatus: () => Promise<unknown>
+  runSmoke: (input: { clientAdapterId: string }) => Promise<{ success: boolean; data?: unknown; error?: { message?: string } }>
+}
+
 interface ElectronAPI {
   proxy: ProxyAPI
   store: StoreAPI
@@ -470,6 +477,7 @@ interface ElectronAPI {
   session: SessionAPI
   managementApi: ManagementApiAPI
   contextManagement: ContextManagementAPI
+  toolCalling: ToolCallingAPI
   tray: TrayAPI
   on: (channel: string, callback: (...args: unknown[]) => void) => () => void
   send: (channel: string, ...args: unknown[]) => void

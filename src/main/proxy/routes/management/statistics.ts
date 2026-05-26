@@ -132,7 +132,7 @@ router.get('/logs', async (ctx: Context) => {
     const logType = query.type || 'request'
 
     if (logType === 'system') {
-      const allLogs = storeManager.getLogs(undefined, level)
+      const allLogs = storeManager.getLogs(level ? { level } : undefined)
       const total = allLogs.length
       const totalPages = Math.ceil(total / limit)
       const startIndex = (page - 1) * limit

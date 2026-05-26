@@ -15,6 +15,13 @@ import { TrayManager } from '../tray/TrayManager'
 import { ConfigManager } from '../store/config'
 import { generateManagementSecret } from '../proxy/middleware/managementAuth'
 import { UpdaterManager } from '../updater'
+import { DeepSeekAdapter } from '../proxy/adapters/deepseek'
+import { GLMAdapter } from '../proxy/adapters/glm'
+import { MimoAdapter } from '../proxy/adapters/mimo'
+import { MiniMaxAdapter } from '../proxy/adapters/minimax'
+import { PerplexityAdapter } from '../proxy/adapters/perplexity'
+import { QwenAiAdapter } from '../proxy/adapters/qwen-ai'
+import { ZaiAdapter } from '../proxy/adapters/zai'
 import type { Provider, Account, ProxyStatus, ProviderCheckResult, OAuthResult, AuthType, CredentialField, LogLevel, LogEntry, ProviderVendor, AppConfig } from '../../shared/types'
 import type { SystemPrompt, SessionConfig, SessionRecord, ManagementApiConfig } from '../store/types'
 import type { ProviderType } from '../oauth/types'
@@ -22,6 +29,16 @@ import type { ProviderType } from '../oauth/types'
 let proxyServer: ProxyServer | null = null
 let proxyStartTime: number | null = null
 const updaterManager = UpdaterManager.getInstance()
+
+const clearChatsHandlers: Record<string, (provider: Provider, account: Account) => Promise<boolean>> = {
+  'qwen-ai': async (provider, account) => new QwenAiAdapter(provider, account).deleteAllChats(),
+  minimax: async (provider, account) => new MiniMaxAdapter(provider, account).deleteAllChats(),
+  zai: async (provider, account) => new ZaiAdapter(provider, account).deleteAllChats(),
+  perplexity: async (provider, account) => new PerplexityAdapter(provider, account).deleteAllChats(),
+  deepseek: async (provider, account) => new DeepSeekAdapter(provider, account).deleteAllChats(),
+  glm: async (provider, account) => new GLMAdapter(provider, account).deleteAllChats(),
+  mimo: async (provider, account) => new MimoAdapter(provider, account).deleteAllChats(),
+}
 
 export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Promise<void> {
   try {
@@ -193,16 +210,27 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
   })
 
   ipcMain.handle(IpcChannels.STORE_GET, async (_, key: string): Promise<unknown> => {
+    if (key === 'logs') {
+      return storeManager.getLogs()
+    }
     const store = storeManager.getStore()
     return store?.get(key)
   })
 
   ipcMain.handle(IpcChannels.STORE_SET, async (_, key: string, value: unknown): Promise<void> => {
+    if (key === 'logs') {
+      storeManager.replaceLogs(Array.isArray(value) ? value as LogEntry[] : [])
+      return
+    }
     const store = storeManager.getStore()
     store?.set(key as 'providers' | 'accounts' | 'config' | 'logs', value as never)
   })
 
   ipcMain.handle(IpcChannels.STORE_DELETE, async (_, key: string): Promise<void> => {
+    if (key === 'logs') {
+      storeManager.clearLogs()
+      return
+    }
     const store = storeManager.getStore()
     store?.delete(key as 'providers' | 'accounts' | 'config' | 'logs')
   })
@@ -593,7 +621,6 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
     }
 
     try {
-      const { MiniMaxAdapter } = await import('../proxy/adapters/minimax')
       const adapter = new MiniMaxAdapter(provider, account)
       return await adapter.getCredits()
     } catch (error) {
@@ -614,45 +641,13 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
         return { success: false, error: 'Provider not found' }
       }
 
-      // Support qwen-ai, minimax, zai, perplexity, deepseek, glm, and mimo providers
-      if (provider.id === 'qwen-ai') {
-        const { QwenAiAdapter } = await import('../proxy/adapters/qwen-ai')
-        const adapter = new QwenAiAdapter(provider, account)
-        const success = await adapter.deleteAllChats()
-        return { success }
-      } else if (provider.id === 'minimax') {
-        const { MiniMaxAdapter } = await import('../proxy/adapters/minimax')
-        const adapter = new MiniMaxAdapter(provider, account)
-        const success = await adapter.deleteAllChats()
-        return { success }
-      } else if (provider.id === 'zai') {
-        const { ZaiAdapter } = await import('../proxy/adapters/zai')
-        const adapter = new ZaiAdapter(provider, account)
-        const success = await adapter.deleteAllChats()
-        return { success }
-      } else if (provider.id === 'perplexity') {
-        const { PerplexityAdapter } = await import('../proxy/adapters/perplexity')
-        const adapter = new PerplexityAdapter(provider, account)
-        const success = await adapter.deleteAllChats()
-        return { success }
-      } else if (provider.id === 'deepseek') {
-        const { DeepSeekAdapter } = await import('../proxy/adapters/deepseek')
-        const adapter = new DeepSeekAdapter(provider, account)
-        const success = await adapter.deleteAllChats()
-        return { success }
-      } else if (provider.id === 'glm') {
-        const { GLMAdapter } = await import('../proxy/adapters/glm')
-        const adapter = new GLMAdapter(provider, account)
-        const success = await adapter.deleteAllChats()
-        return { success }
-      } else if (provider.id === 'mimo') {
-        const { MimoAdapter } = await import('../proxy/adapters/mimo')
-        const adapter = new MimoAdapter(provider, account)
-        const success = await adapter.deleteAllChats()
-        return { success }
-      } else {
+      const clearChats = clearChatsHandlers[provider.id]
+      if (!clearChats) {
         return { success: false, error: 'This feature is not available for this provider' }
       }
+
+      const success = await clearChats(provider, account)
+      return { success }
     } catch (error) {
       console.error('[IPC] Failed to clear chats:', error)
       return { 
@@ -715,8 +710,7 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
     limit?: number
     offset?: number
   }): Promise<LogEntry[]> => {
-    const level = filter?.level === 'all' ? undefined : filter?.level
-    return storeManager.getLogs(filter?.limit, level)
+    return storeManager.getLogs(filter)
   })
 
   ipcMain.handle(IpcChannels.LOGS_GET_STATS, async () => {

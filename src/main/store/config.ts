@@ -11,6 +11,7 @@ import {
   ModelMapping,
   DEFAULT_CONFIG,
 } from './types'
+import { normalizeToolCallingConfig } from '../../shared/toolCalling'
 
 /**
  * Config Manager class
@@ -332,6 +333,22 @@ export class ConfigManager {
     if (config.retryCount !== undefined) {
       if (config.retryCount < 0 || config.retryCount > 10) {
         errors.push('Retry count must be between 0-10')
+      }
+    }
+
+    if (config.toolCallingConfig) {
+      const normalized = normalizeToolCallingConfig(config.toolCallingConfig)
+      if (
+        config.toolCallingConfig.mode !== undefined &&
+        normalized.mode !== config.toolCallingConfig.mode
+      ) {
+        errors.push('toolCallingConfig.mode must be one of: off, auto, force')
+      }
+      if (
+        config.toolCallingConfig.clientAdapterId !== undefined &&
+        !['standard-openai-tools', 'cherry-studio-mcp'].includes(String(config.toolCallingConfig.clientAdapterId))
+      ) {
+        errors.push('toolCallingConfig.clientAdapterId must be one of: standard-openai-tools, cherry-studio-mcp')
       }
     }
     

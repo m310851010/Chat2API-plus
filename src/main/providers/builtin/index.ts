@@ -1,13 +1,13 @@
-import deepseekConfig from './deepseek'
-import glmConfig from './glm'
-import kimiConfig from './kimi'
-import minimaxConfig from './minimax'
-import mimoConfig from './mimo'
-import perplexityConfig from './perplexity'
-import qwenConfig from './qwen'
-import qwenAiConfig from './qwen-ai'
-import zaiConfig from './zai'
-import type { BuiltinProviderConfig } from '../../store/types'
+import deepseekConfig from './deepseek.ts'
+import glmConfig from './glm.ts'
+import kimiConfig from './kimi.ts'
+import minimaxConfig from './minimax.ts'
+import mimoConfig from './mimo.ts'
+import perplexityConfig from './perplexity.ts'
+import qwenConfig from './qwen.ts'
+import qwenAiConfig from './qwen-ai.ts'
+import zaiConfig from './zai.ts'
+import type { BuiltinProviderConfig } from '../../store/types.ts'
 
 export const builtinProviders: BuiltinProviderConfig[] = [
   deepseekConfig,

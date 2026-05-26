@@ -13,13 +13,10 @@ import { Account, Provider } from '../../store/types'
 import { hasToolUse, parseToolUse, ToolCall } from '../promptToolUse'
 import { toolsToSystemPrompt, TOOL_WRAP_HINT, hasToolPromptInjected, shouldInjectToolPrompt } from '../utils/tools'
 import { parseToolCallsFromText } from '../utils/toolParser'
-import { 
-  createToolCallState, 
-  processStreamContent, 
-  flushToolCallBuffer,
-  createBaseChunk,
-  ToolCallState 
-} from '../utils/streamToolHandler'
+import { createBaseChunk } from '../utils/streamToolHandler'
+import { getProviderToolProfile } from '../toolCalling/providerProfiles'
+import { ToolStreamParser } from '../toolCalling/ToolStreamParser'
+import type { ToolCallingPlan } from '../toolCalling/types'
 
 /**
  * Check if content contains tool calls (both bracket and XML formats)
@@ -57,8 +54,10 @@ const DEFAULT_HEADERS = {
 }
 
 interface QwenMessage {
-  role: 'user' | 'assistant' | 'system'
+  role: 'user' | 'assistant' | 'system' | 'tool'
   content: string | any[]
+  tool_call_id?: string
+  tool_calls?: any[]
 }
 
 interface ChatCompletionRequest {
@@ -179,17 +178,34 @@ export class QwenAdapter {
     })
     console.log('[Qwen] Using model:', actualModel)
 
-    // Find system message and user message
+    const toolProfile = getProviderToolProfile('qwen')
+
+    // Build prompt content from conversation messages
     let systemPrompt = ''
-    let userContent = ''
+    const conversationParts: string[] = []
     
     for (const msg of request.messages) {
       if (msg.role === 'system') {
         systemPrompt = extractTextContent(msg.content)
       } else if (msg.role === 'user') {
-        userContent = extractTextContent(msg.content)
+        conversationParts.push(extractTextContent(msg.content))
+      } else if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+        conversationParts.push(toolProfile.formatAssistantToolCalls(msg.tool_calls.map(tc => ({
+          id: tc.id,
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        }))))
+      } else if (msg.role === 'assistant') {
+        conversationParts.push(`Assistant: ${extractTextContent(msg.content)}`)
+      } else if (msg.role === 'tool' && msg.tool_call_id) {
+        conversationParts.push(toolProfile.formatToolResult({
+          toolCallId: msg.tool_call_id,
+          content: extractTextContent(msg.content),
+        }))
       }
     }
+
+    let userContent = conversationParts.join('\n\n')
 
     // Inject tools prompt if tools are provided and not already injected by client
     if (request.tools && request.tools.length > 0 && !hasToolPromptInjected(request.messages)) {
@@ -324,16 +340,18 @@ export class QwenStreamHandler {
   private stopSent: boolean = false
   private toolCallsSent: boolean = false
   private hasError: boolean = false
-  private toolCallState: ToolCallState
+  private toolStreamParser?: ToolStreamParser
+  private toolCallingPlan?: ToolCallingPlan
   private sentRole: boolean = false
   private thinkingContent: string = ''
   private sentThinkingRole: boolean = false
 
-  constructor(model: string, onEnd?: (sessionId: string) => void) {
+  constructor(model: string, onEnd?: (sessionId: string) => void, toolCallingPlan?: ToolCallingPlan) {
     this.model = model
     this.created = Math.floor(Date.now() / 1000)
     this.onEnd = onEnd
-    this.toolCallState = createToolCallState()
+    this.toolCallingPlan = toolCallingPlan
+    this.toolStreamParser = toolCallingPlan?.shouldParseResponse ? new ToolStreamParser(toolCallingPlan) : undefined
   }
 
   hasSessionError(): boolean {
@@ -551,13 +569,10 @@ export class QwenStreamHandler {
 
                     // Process tool call interception
                     const baseChunk = createBaseChunk(this.responseId || this.sessionId, this.model, this.created)
-                    const { chunks: outputChunks } = processStreamContent(
-                      chunk, 
-                      this.toolCallState, 
-                      baseChunk, 
-                      !this.sentRole,
-                      'qwen'
-                    )
+                    const outputChunks = this.toolStreamParser?.push(chunk, baseChunk, !this.sentRole) ?? [{
+                      ...baseChunk,
+                      choices: [{ index: 0, delta: { ...(!this.sentRole ? { role: 'assistant' } : {}), content: chunk }, finish_reason: null }],
+                    }]
 
                     for (const outChunk of outputChunks) {
                       transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
@@ -578,14 +593,14 @@ export class QwenStreamHandler {
                     
                     // Flush any remaining tool calls
                     const baseChunk = createBaseChunk(this.responseId || this.sessionId, this.model, this.created)
-                    const flushChunks = flushToolCallBuffer(this.toolCallState, baseChunk, 'qwen')
+                    const flushChunks = this.toolStreamParser?.flush(baseChunk) ?? []
                     
                     for (const outChunk of flushChunks) {
                       transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
                     }
                     
                     // Check if we emitted tool calls
-                    const finishReason = this.toolCallState.hasEmittedToolCall ? 'tool_calls' : 'stop'
+                    const finishReason = this.toolStreamParser?.hasEmittedToolCall() ? 'tool_calls' : 'stop'
                     
                     transStream.write(
                       `data: ${JSON.stringify({
@@ -630,14 +645,14 @@ export class QwenStreamHandler {
             
             // Flush any remaining tool calls
             const baseChunk = createBaseChunk(this.responseId || this.sessionId, this.model, this.created)
-            const flushChunks = flushToolCallBuffer(this.toolCallState, baseChunk, 'qwen')
+            const flushChunks = this.toolStreamParser?.flush(baseChunk) ?? []
             
             for (const outChunk of flushChunks) {
               transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
             }
             
             // Check if we emitted tool calls
-            const finishReason = this.toolCallState.hasEmittedToolCall ? 'tool_calls' : 'stop'
+            const finishReason = this.toolStreamParser?.hasEmittedToolCall() ? 'tool_calls' : 'stop'
             
             transStream.write(
               `data: ${JSON.stringify({
@@ -749,7 +764,9 @@ export class QwenStreamHandler {
       let resolved = false
 
       const finalizeWithData = (content: string) => {
-        const { content: cleanContent, toolCalls } = parseToolCallsFromText(content, 'qwen')
+        const { content: cleanContent, toolCalls } = this.toolCallingPlan?.shouldParseResponse
+          ? { content, toolCalls: [] }
+          : parseToolCallsFromText(content, 'qwen')
         if (toolCalls.length > 0) {
           data.choices[0].message.content = null
           data.choices[0].message.tool_calls = toolCalls
@@ -854,7 +871,9 @@ export class QwenStreamHandler {
                       this.content = contentAccumulator
                       
                       // Parse tool calls from content
-                      const { content: cleanContent, toolCalls } = parseToolCallsFromText(contentAccumulator, 'qwen')
+                      const { content: cleanContent, toolCalls } = this.toolCallingPlan?.shouldParseResponse
+                        ? { content: contentAccumulator, toolCalls: [] }
+                        : parseToolCallsFromText(contentAccumulator, 'qwen')
                       
                       if (toolCalls.length > 0) {
                         data.choices[0].message.content = null

@@ -193,14 +193,18 @@ export const useProxyStore = create<ProxyState>((set, get) => ({
       set({ isLoading: true, error: null })
       const currentConfig = get().appConfig
       
-      // Deep merge for nested objects like toolPromptConfig and sessionConfig
+      // Deep merge for nested objects like toolCallingConfig and sessionConfig
       let newConfig = { ...currentConfig, ...config } as AppConfig
       
-      // Handle toolPromptConfig deep merge
-      if (config.toolPromptConfig && currentConfig?.toolPromptConfig) {
-        newConfig.toolPromptConfig = {
-          ...currentConfig.toolPromptConfig,
-          ...config.toolPromptConfig,
+      // Handle toolCallingConfig deep merge
+      if (config.toolCallingConfig && currentConfig?.toolCallingConfig) {
+        newConfig.toolCallingConfig = {
+          ...currentConfig.toolCallingConfig,
+          ...config.toolCallingConfig,
+          advanced: {
+            ...currentConfig.toolCallingConfig.advanced,
+            ...config.toolCallingConfig.advanced,
+          },
         }
       }
       

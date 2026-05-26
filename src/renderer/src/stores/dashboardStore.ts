@@ -250,7 +250,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         return {
           id: provider.id,
           name: provider.name,
-          status: status?.status ?? 'unknown',
+          status: status?.status ?? provider.status ?? 'unknown',
           requestCount: totalCount,
           successCount: successCount,
           latency: status?.latency,

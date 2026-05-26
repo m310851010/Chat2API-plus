@@ -8,6 +8,12 @@ build/entitlements.mac.plist
 
 # TypeScript
 *.tsbuildinfo
+src/**/*.js
+src/**/*.d.ts
+electron.vite.config.js
+electron.vite.config.d.ts
+vite.config.js
+vite.config.d.ts
 
 # Vite temp files
 *.mjs.tmp
@@ -32,6 +38,7 @@ Thumbs.db
 .trae/
 *.swp
 *.swo
+.codex/
 CLAUDE.md
 
 # Environment
@@ -51,4 +58,3 @@ src/renderer/next-app/
 
 # Backup
 backup/
-

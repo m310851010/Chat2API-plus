@@ -4,22 +4,31 @@
  */
 
 import { PassThrough } from 'stream'
-import { parseToolCallsFromText } from '../utils/toolParser'
-import { 
-  createToolCallState, 
-  processStreamContent, 
-  flushToolCallBuffer,
-  createBaseChunk,
-  ToolCallState 
-} from '../utils/streamToolHandler'
+import { parseToolCallsFromText } from '../utils/toolParser.ts'
+import { ToolStreamParser } from '../toolCalling/ToolStreamParser.ts'
+import type { ToolCallingPlan } from '../toolCalling/types.ts'
 
 const MODEL_NAME = 'deepseek-chat'
+const SEARCH_CONTROL_MARKER_PATTERN = /^(SEARCH|WEB_SEARCH|SEARCHING)(?:\s+|$)/i
+
+function stripSearchControlMarker(content: string, enabled: boolean): string {
+  return enabled ? content.replace(SEARCH_CONTROL_MARKER_PATTERN, '') : content
+}
 
 interface StreamChunk {
   p?: string
   v?: any
   response_message_id?: string
   o?: string
+}
+
+function createBaseChunk(id: string, model: string, created: number) {
+  return {
+    id,
+    model,
+    object: 'chat.completion.chunk',
+    created
+  }
 }
 
 export class DeepSeekStreamHandler {
@@ -33,28 +42,128 @@ export class DeepSeekStreamHandler {
   private accumulatedTokenUsage: number = 2
   private created: number
   private onEnd?: () => void
-  private toolCallState: ToolCallState
+  private toolStreamParser?: ToolStreamParser
+  private toolCallingPlan?: ToolCallingPlan
   private webSearchEnabled: boolean
   private reasoningEffort: string | undefined
+  private isDone: boolean = false
+  private semanticModel: string
 
   constructor(
     model: string,
     sessionId: string,
     onEnd?: () => void,
     webSearchEnabled: boolean = false,
-    reasoningEffort?: string
+    reasoningEffort?: string,
+    toolCallingPlan?: ToolCallingPlan,
+    semanticModel?: string
   ) {
     this.model = model
+    this.semanticModel = (semanticModel || model).toLowerCase()
     this.sessionId = sessionId
     this.created = Math.floor(Date.now() / 1000)
     this.onEnd = onEnd
-    this.toolCallState = createToolCallState()
+    this.toolCallingPlan = toolCallingPlan
+    this.toolStreamParser = toolCallingPlan?.shouldParseResponse ? new ToolStreamParser(toolCallingPlan) : undefined
     this.webSearchEnabled = webSearchEnabled
     this.reasoningEffort = reasoningEffort
   }
 
   getLastMessageId(): string {
     return this.messageId
+  }
+
+  private isThinkingModel(): boolean {
+    return this.semanticModel.includes('think')
+      || this.semanticModel.includes('r1')
+      || this.semanticModel.includes('reasoner')
+      || !!this.reasoningEffort
+  }
+
+  private isFoldModel(isThinkingModel: boolean): boolean {
+    return (this.semanticModel.includes('fold')
+      || this.semanticModel.includes('search')
+      || this.webSearchEnabled) && !isThinkingModel
+  }
+
+  private isSilentModel(): boolean {
+    return this.semanticModel.includes('silent')
+  }
+
+  private isSearchSilentModel(): boolean {
+    return this.semanticModel.includes('search-silent')
+  }
+
+  private shouldStripSearchControlMarker(): boolean {
+    return this.webSearchEnabled || this.semanticModel.includes('search')
+  }
+
+  private static normalizeSearchResult(result: any): any | null {
+    if (!result || typeof result !== 'object') return null
+
+    const url = result.url
+    const title = result.title
+    if (typeof url !== 'string' || typeof title !== 'string') return null
+
+    const citeIndex = typeof result.cite_index === 'number'
+      ? result.cite_index
+      : typeof result.citeIndex === 'number'
+        ? result.citeIndex
+        : undefined
+
+    const normalized = {
+      ...result,
+    }
+    delete normalized.cite_index
+    delete normalized.citeIndex
+    if (typeof citeIndex === 'number' && Number.isFinite(citeIndex)) {
+      normalized.cite_index = citeIndex
+    }
+
+    return normalized
+  }
+
+  private static mergeSearchResultsInto(target: any[], results: any[]): void {
+    for (const result of results) {
+      const normalized = DeepSeekStreamHandler.normalizeSearchResult(result)
+      if (!normalized) continue
+
+      const existingIndex = target.findIndex((item) => item.url === normalized.url)
+      if (existingIndex >= 0) {
+        target[existingIndex] = {
+          ...target[existingIndex],
+          ...normalized,
+        }
+      } else {
+        target.push(normalized)
+      }
+    }
+  }
+
+  private static applySearchResultBatch(target: any[], operations: any[]): void {
+    for (const op of operations) {
+      const match = op?.p?.match(/^(\d+)\/cite_index$/)
+      if (!match) continue
+
+      const index = parseInt(match[1], 10)
+      if (target[index] && typeof op.v === 'number' && Number.isFinite(op.v)) {
+        target[index].cite_index = op.v
+      }
+    }
+  }
+
+  private static formatSearchCitations(results: any[]): string {
+    const seenUrls = new Set<string>()
+    return results
+      .filter(r => Number.isFinite(r.cite_index) && typeof r.url === 'string' && typeof r.title === 'string')
+      .filter(r => {
+        if (seenUrls.has(r.url)) return false
+        seenUrls.add(r.url)
+        return true
+      })
+      .sort((a, b) => a.cite_index - b.cite_index)
+      .map(r => `[${r.cite_index}]: [${r.title}](${r.url})`)
+      .join('\n')
   }
 
   private parseSSE(data: string): StreamChunk | null {
@@ -81,10 +190,10 @@ export class DeepSeekStreamHandler {
 
   async handleStream(stream: NodeJS.ReadableStream): Promise<NodeJS.ReadableStream> {
     const transStream = new PassThrough()
-    const isThinkingModel = this.model.includes('think') || this.model.includes('r1') || !!this.reasoningEffort
-    const isSilentModel = this.model.includes('silent')
-    const isFoldModel = (this.model.includes('fold') || this.model.includes('search') || this.webSearchEnabled) && !isThinkingModel
-    const isSearchSilentModel = this.model.includes('search-silent')
+    const isThinkingModel = this.isThinkingModel()
+    const isSilentModel = this.isSilentModel()
+    const isFoldModel = this.isFoldModel(isThinkingModel)
+    const isSearchSilentModel = this.isSearchSilentModel()
 
     let buffer = ''
 
@@ -141,6 +250,10 @@ export class DeepSeekStreamHandler {
       const fragments = chunk.v.response.fragments
       if (Array.isArray(fragments) && fragments.length > 0) {
         for (const fragment of fragments) {
+          if (Array.isArray(fragment.results)) {
+            DeepSeekStreamHandler.mergeSearchResultsInto(this.searchResults, fragment.results)
+          }
+
           if (fragment.content) {
             const fragmentType = fragment.type
             const fragmentContent = fragment.content
@@ -189,19 +302,14 @@ export class DeepSeekStreamHandler {
       })
     }
 
-    if (chunk.p === 'response/search_results' && Array.isArray(chunk.v)) {
+    if (
+      (chunk.p === 'response/search_results' || /^response\/fragments\/-?\d+\/results$/.test(chunk.p || ''))
+      && Array.isArray(chunk.v)
+    ) {
       if (chunk.o !== 'BATCH') {
-        this.searchResults = chunk.v
+        DeepSeekStreamHandler.mergeSearchResultsInto(this.searchResults, chunk.v)
       } else {
-        chunk.v.forEach((op: any) => {
-          const match = op.p?.match(/^(\d+)\/cite_index$/)
-          if (match) {
-            const index = parseInt(match[1], 10)
-            if (this.searchResults[index]) {
-              this.searchResults[index].cite_index = op.v
-            }
-          }
-        })
+        DeepSeekStreamHandler.applySearchResultBatch(this.searchResults, chunk.v)
       }
       return
     }
@@ -240,22 +348,15 @@ export class DeepSeekStreamHandler {
     isSearchSilentModel: boolean
   ): void {
     const cleanedValue = content.replace(/FINISHED/g, '')
-    // Always filter SEARCH keywords for thinking content
-    const filteredForSearch = cleanedValue.replace(/^(SEARCH|WEB_SEARCH|SEARCHING)\s*/i, '')
+    const filteredForSearch = stripSearchControlMarker(cleanedValue, this.shouldStripSearchControlMarker())
     const processedContent = isSearchSilentModel
       ? filteredForSearch.replace(/\[citation:(\d+)\]/g, '')
       : filteredForSearch.replace(/\[citation:(\d+)\]/g, '[$1]')
 
-    // For 'content' path, check for tool calls using processStreamContent
-    if (path === 'content' || path === '') {
+    // For 'content' path, intercept tool calls before text is streamed.
+    if ((path === 'content' || path === '') && this.toolStreamParser) {
       const baseChunk = createBaseChunk(`${this.sessionId}@${this.messageId}`, this.model, this.created)
-      const { chunks, shouldFlush } = processStreamContent(
-        processedContent,
-        this.toolCallState,
-        baseChunk,
-        this.isFirstChunk,
-        'deepseek'
-      )
+      const chunks = this.toolStreamParser.push(processedContent, baseChunk, this.isFirstChunk)
       
       // Send any chunks generated by tool call processing
       for (const chunk of chunks) {
@@ -264,7 +365,7 @@ export class DeepSeekStreamHandler {
       }
       
       // If we're buffering a tool call or already emitted tool calls, don't send as regular content
-      if (this.toolCallState.isBufferingToolCall || this.toolCallState.hasEmittedToolCall) {
+      if (this.toolStreamParser.isBuffering() || this.toolStreamParser.hasEmittedToolCall()) {
         return
       }
       
@@ -316,15 +417,12 @@ export class DeepSeekStreamHandler {
   }
 
   private handleDone(transStream: PassThrough, isFoldModel: boolean, isSearchSilentModel: boolean): void {
-    // If we haven't sent the first chunk (role: assistant), send it now
-    // This handles cases where the model doesn't send any content chunks
-    if (this.isFirstChunk) {
-      transStream.write(this.createChunk({ role: 'assistant' }))
-    }
+    if (this.isDone) return
+    this.isDone = true
 
     // Flush tool call buffer before finishing
     const baseChunk = createBaseChunk(`${this.sessionId}@${this.messageId}`, this.model, this.created)
-    const flushChunks = flushToolCallBuffer(this.toolCallState, baseChunk, 'deepseek')
+    const flushChunks = this.toolStreamParser?.flush(baseChunk) ?? []
     for (const outChunk of flushChunks) {
       transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
     }
@@ -334,24 +432,20 @@ export class DeepSeekStreamHandler {
     }
 
     if (this.searchResults.length > 0 && !isSearchSilentModel) {
-      const citations = this.searchResults
-        .filter(r => r.cite_index)
-        .sort((a, b) => a.cite_index - b.cite_index)
-        .map(r => `[${r.cite_index}]: [${r.title}](${r.url})`)
-        .join('\n')
-
+      const citations = DeepSeekStreamHandler.formatSearchCitations(this.searchResults)
+      
       if (citations) {
         transStream.write(this.createChunk({ content: `\n\n${citations}` }))
       }
     }
 
     // Determine finish_reason based on whether we had tool calls
-    const finishReason = this.toolCallState.hasEmittedToolCall ? 'tool_calls' : 'stop'
+    const finishReason = this.toolStreamParser?.hasEmittedToolCall() ? 'tool_calls' : 'stop'
 
     transStream.write(this.createChunk({}, finishReason))
     transStream.write('data: [DONE]\n\n')
     transStream.end()
-
+    
     // Call end callback
     this.onEnd?.()
   }
@@ -362,9 +456,11 @@ export class DeepSeekStreamHandler {
     let messageId = ''
     let currentPath = ''
     let accumulatedTokenUsage = 2
-    const isThinkingModel = this.model.includes('think') || this.model.includes('r1') || !!this.reasoningEffort
-    const isFoldModel = (this.model.includes('fold') || this.model.includes('search') || this.webSearchEnabled) && !isThinkingModel
-    const isSearchSilentModel = this.model.includes('search-silent')
+    const searchResults: any[] = []
+    const isThinkingModel = this.isThinkingModel()
+    const isFoldModel = this.isFoldModel(isThinkingModel)
+    const isSearchSilentModel = this.isSearchSilentModel()
+    const shouldStripSearchControlMarker = this.shouldStripSearchControlMarker()
 
     return new Promise((resolve, reject) => {
       let buffer = ''
@@ -397,9 +493,13 @@ export class DeepSeekStreamHandler {
               const fragments = parsed.v.response.fragments
               if (Array.isArray(fragments) && fragments.length > 0) {
                 for (const fragment of fragments) {
+                  if (Array.isArray(fragment.results)) {
+                    DeepSeekStreamHandler.mergeSearchResultsInto(searchResults, fragment.results)
+                  }
+
                   if (fragment.content) {
                     let cleanedFragment = fragment.content.replace(/FINISHED/g, '')
-                    cleanedFragment = cleanedFragment.replace(/^(SEARCH|WEB_SEARCH|SEARCHING)\s*/i, '')
+                    cleanedFragment = stripSearchControlMarker(cleanedFragment, shouldStripSearchControlMarker)
                     if (fragment.type === 'THINK') {
                       accumulatedThinkingContent += cleanedFragment
                     } else if (fragment.type === 'ANSWER' || fragment.type === 'RESPONSE') {
@@ -413,7 +513,7 @@ export class DeepSeekStreamHandler {
                 for (const fragment of parsed.v) {
                   if (fragment.content) {
                     let cleanedFragment = fragment.content.replace(/FINISHED/g, '')
-                    cleanedFragment = cleanedFragment.replace(/^(SEARCH|WEB_SEARCH|SEARCHING)\s*/i, '')
+                    cleanedFragment = stripSearchControlMarker(cleanedFragment, shouldStripSearchControlMarker)
                     if (fragment.type === 'THINK') {
                       currentPath = 'thinking'
                       accumulatedThinkingContent += cleanedFragment
@@ -433,6 +533,18 @@ export class DeepSeekStreamHandler {
               }
             }
 
+            if (
+              (parsed.p === 'response/search_results' || /^response\/fragments\/-?\d+\/results$/.test(parsed.p || ''))
+              && Array.isArray(parsed.v)
+            ) {
+              if (parsed.o !== 'BATCH') {
+                DeepSeekStreamHandler.mergeSearchResultsInto(searchResults, parsed.v)
+              } else {
+                DeepSeekStreamHandler.applySearchResultBatch(searchResults, parsed.v)
+              }
+              continue
+            }
+
             // For thinking models, default to 'thinking' path if not set
             if (!currentPath && isThinkingModel) {
               currentPath = 'thinking'
@@ -450,7 +562,7 @@ export class DeepSeekStreamHandler {
                 }
                 if (Array.isArray(e.v)) {
                   let cleanedValue = e.v.map((v: any) => v.content).join('').replace(/FINISHED/g, '')
-                  cleanedValue = cleanedValue.replace(/^(SEARCH|WEB_SEARCH|SEARCHING)\s*/i, '')
+                  cleanedValue = stripSearchControlMarker(cleanedValue, shouldStripSearchControlMarker)
                   if (currentPath === 'thinking') {
                     accumulatedThinkingContent += cleanedValue
                   } else if (currentPath === 'content') {
@@ -462,7 +574,7 @@ export class DeepSeekStreamHandler {
 
             if (typeof parsed.v === 'string') {
               let cleanedValue = parsed.v.replace(/FINISHED/g, '')
-              cleanedValue = cleanedValue.replace(/^(SEARCH|WEB_SEARCH|SEARCHING)\s*/i, '')
+              cleanedValue = stripSearchControlMarker(cleanedValue, shouldStripSearchControlMarker)
               if (currentPath === 'thinking') {
                 accumulatedThinkingContent += cleanedValue
               } else if (currentPath === 'content') {
@@ -477,12 +589,21 @@ export class DeepSeekStreamHandler {
 
       stream.on('end', () => {
         // Parse tool calls from accumulated content
-        const { content: cleanContent, toolCalls } = parseToolCallsFromText(accumulatedContent)
+        const { content: cleanContent, toolCalls } = this.toolCallingPlan?.shouldParseResponse
+          ? { content: accumulatedContent, toolCalls: [] }
+          : parseToolCallsFromText(accumulatedContent)
+        const citations = isSearchSilentModel
+          ? ''
+          : DeepSeekStreamHandler.formatSearchCitations(searchResults)
+        const trimmedContent = cleanContent.trim()
+        const contentWithCitations = citations
+          ? (trimmedContent ? `${trimmedContent}\n\n${citations}` : citations)
+          : trimmedContent
 
         const message: any = {
           role: 'assistant',
           reasoning_content: accumulatedThinkingContent.trim() || undefined,
-          content: toolCalls.length > 0 ? null : cleanContent.trim(),
+          content: toolCalls.length > 0 ? null : contentWithCitations,
         }
 
         if (toolCalls.length > 0) {

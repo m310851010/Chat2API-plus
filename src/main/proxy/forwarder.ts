@@ -7,7 +7,7 @@ import axios, { AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios'
 import http2 from 'http2'
 import { PassThrough } from 'stream'
 import { Account, Provider } from '../store/types'
-import { ForwardResult, ChatCompletionRequest, ProxyContext, ChatCompletionTool, ToolCall } from './types'
+import { ForwardResult, ChatCompletionRequest, ProxyContext } from './types'
 import { proxyStatusManager } from './status'
 import { storeManager } from '../store/store'
 import { DeepSeekAdapter } from './adapters/deepseek'
@@ -21,17 +21,9 @@ import { ZaiAdapter, ZaiStreamHandler } from './adapters/zai'
 import { MiniMaxAdapter, MiniMaxStreamHandler } from './adapters/minimax'
 import { PerplexityAdapter } from './adapters/perplexity'
 import { PerplexityStreamHandler } from './adapters/perplexity-stream'
-import {
-  isNativeFunctionCallingModel,
-  parseToolUse,
-  formatToolResult,
-  hasToolUse,
-} from './promptToolUse'
-import { parseToolCallsFromText } from './utils/toolParser'
-import { parseToolCalls } from './utils/toolParser/index'
-import { promptInjectionService } from './services/promptInjectionService'
+import { ToolCallingEngine } from './toolCalling/ToolCallingEngine'
+import type { ToolCallingTransformResult } from './toolCalling/types'
 import { sessionManager } from './sessionManager'
-import { cleanClientToolPrompts } from './utils/promptSignatures'
 import {
   createContextManagementService,
   SummaryGenerator,
@@ -40,6 +32,18 @@ import {
 
 function shouldDeleteSession(): boolean {
   return sessionManager.shouldDeleteAfterChat()
+}
+
+type ProviderForwarder = {
+  name: string
+  matches: (provider: Provider) => boolean
+  forward: (
+    request: ChatCompletionRequest,
+    account: Account,
+    provider: Provider,
+    actualModel: string,
+    startTime: number
+  ) => Promise<ForwardResult>
 }
 
 /**
@@ -52,226 +56,95 @@ export class RequestForwarder {
     maxContentLength: Infinity,
   })
 
+  private readonly providerForwarders: ProviderForwarder[] = [
+    {
+      name: 'deepseek',
+      matches: DeepSeekAdapter.isDeepSeekProvider,
+      forward: (request, account, provider, actualModel, startTime) =>
+        this.forwardDeepSeek(request, account, provider, actualModel, startTime),
+    },
+    {
+      name: 'glm',
+      matches: GLMAdapter.isGLMProvider,
+      forward: (request, account, provider, actualModel, startTime) =>
+        this.forwardGLM(request, account, provider, actualModel, startTime),
+    },
+    {
+      name: 'kimi',
+      matches: KimiAdapter.isKimiProvider,
+      forward: (request, account, provider, actualModel, startTime) =>
+        this.forwardKimi(request, account, provider, actualModel, startTime),
+    },
+    {
+      name: 'qwen',
+      matches: QwenAdapter.isQwenProvider,
+      forward: (request, account, provider, actualModel, startTime) =>
+        this.forwardQwen(request, account, provider, actualModel, startTime),
+    },
+    {
+      name: 'qwen-ai',
+      matches: QwenAiAdapter.isQwenAiProvider,
+      forward: (request, account, provider, actualModel, startTime) =>
+        this.forwardQwenAi(request, account, provider, actualModel, startTime),
+    },
+    {
+      name: 'zai',
+      matches: ZaiAdapter.isZaiProvider,
+      forward: (request, account, provider, actualModel, startTime) =>
+        this.forwardZai(request, account, provider, actualModel, startTime),
+    },
+    {
+      name: 'minimax',
+      matches: MiniMaxAdapter.isMiniMaxProvider,
+      forward: (request, account, provider, actualModel, startTime) =>
+        this.forwardMiniMax(request, account, provider, actualModel, startTime),
+    },
+    {
+      name: 'mimo',
+      matches: MimoAdapter.isMimoProvider,
+      forward: (request, account, provider, actualModel, startTime) =>
+        this.forwardMimo(request, account, provider, actualModel, startTime),
+    },
+    {
+      name: 'perplexity',
+      matches: PerplexityAdapter.isPerplexityProvider,
+      forward: (request, account, provider, actualModel, startTime) =>
+        this.forwardPerplexity(request, account, provider, actualModel, startTime),
+    },
+  ]
+
   /**
    * Transform request for prompt-based tool calling
    * For models that don't support native function calling
-   * Delegates all logic to PromptInjectionService
+   * Delegates tool normalization, prompt injection, and parser planning to ToolCallingEngine.
    */
   private transformRequestForPromptToolUse(
     request: ChatCompletionRequest,
     provider?: Provider
-  ): { messages: any[]; tools: undefined } | { messages: any[]; tools: ChatCompletionTool[] } {
-    const { messages, tools, model } = request
+  ): ToolCallingTransformResult {
+    const config = storeManager.getConfig().toolCallingConfig
+    const engine = new ToolCallingEngine(config)
 
-    // 1. Quick check: native function calling model
-    if (isNativeFunctionCallingModel(model)) {
-      return { messages, tools }
-    }
-
-    // 2. Delegate all injection logic to PromptInjectionService
-    const result = promptInjectionService.process(messages, tools || [], model, provider?.id)
-
-    // 3. Return processed messages with tools undefined (Web API doesn't support tools parameter)
-    return { messages: result.messages, tools: undefined }
-  }
-
-  /**
-   * Parse tool calls from response content
-   * Supports multiple formats: bracket, XML, Anthropic, JSON
-   */
-  private parseToolCallsFromContent(content: string): ToolCall[] | null {
-    const result = parseToolCalls(content)
-
-    if (result.toolCalls.length > 0) {
-      console.log(`[Forwarder] Parsed ${result.toolCalls.length} tool calls (format: ${result.format})`)
-      return result.toolCalls
-    }
-
-    return null
-  }
-
-  private applyToolCallsToResponse(
-    result: any,
-    model: string,
-    tools: any[] | undefined
-  ): void {
-    if (tools && tools.length > 0 && !isNativeFunctionCallingModel(model)) {
-      const content = result?.choices?.[0]?.message?.content || ''
-      const toolCalls = this.parseToolCallsFromContent(content)
-      
-      if (toolCalls && toolCalls.length > 0) {
-        result.choices[0].message.tool_calls = toolCalls
-        result.choices[0].message.content = null
-        result.choices[0].finish_reason = 'tool_calls'
-      }
-    }
-  }
-
-  private hasMCPToolDefinitions(messages: any[]): boolean {
-    for (const msg of messages) {
-      if (msg.role === 'system' && typeof msg.content === 'string') {
-        // Check for MCP-style tool definitions
-        if (msg.content.includes('<tools>') && msg.content.includes('<tool>')) {
-          return true
-        }
-        // Also check for "Tool Use Available Tools" section (Cherry Studio format)
-        if (msg.content.includes('## Tool Use Available Tools')) {
-          return true
-        }
-      }
-    }
-    return false
-  }
-
-  /**
-   * Transform MCP tool protocol from one format to another
-   * Used when user wants to change the tool calling format
-   */
-  private transformMCPToolProtocol(messages: any[], targetFormat: 'bracket' | 'xml'): any[] {
-    console.log(`[Forwarder] Transforming MCP tool protocol to ${targetFormat} format`)
-    
-    return messages.map(msg => {
-      if (msg.role === 'system' && typeof msg.content === 'string') {
-        console.log(`[Forwarder] Processing system message, content length: ${msg.content.length}`)
-        
-        // Extract tool definitions from MCP format FIRST (before cleaning)
-        const tools = this.extractMCPTools(msg.content)
-        
-        console.log(`[Forwarder] Extracted ${tools.length} MCP tools from original content`)
-        
-        if (tools.length === 0) {
-          return msg
-        }
-        
-        // Clean existing tool prompt section
-        const cleanedMsg = cleanClientToolPrompts([msg])[0]
-        let content = msg.content
-        if (typeof cleanedMsg.content === 'string' && cleanedMsg.content !== msg.content) {
-          console.log(`[Forwarder] Cleaned content, new length: ${cleanedMsg.content.length}`)
-          content = cleanedMsg.content
-        } else {
-          console.log(`[Forwarder] No cleaning performed or content unchanged`)
-        }
-        
-        // Generate new tool prompt in target format
-        const toolPrompt = this.generateToolPrompt(tools, targetFormat)
-        console.log(`[Forwarder] Generated tool prompt, length: ${toolPrompt.length}`)
-        
-        // Inject new prompt
-        const newContent = content + '\n\n' + toolPrompt
-        console.log(`[Forwarder] New content length: ${newContent.length}`)
-        
-        return {
-          ...msg,
-          content: newContent
-        }
-      }
-      return msg
+    return engine.transformRequest({
+      request,
+      provider: provider ?? {
+        id: 'custom',
+        name: 'Custom',
+        type: 'custom',
+        authType: 'token',
+        apiEndpoint: '',
+        headers: {},
+        enabled: true,
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      actualModel: request.model,
     })
   }
 
-  /**
-   * Extract tool definitions from MCP format
-   */
-  private extractMCPTools(content: string): ChatCompletionTool[] {
-    const tools: ChatCompletionTool[] = []
-    
-    console.log('[Forwarder] Extracting MCP tools from content')
-    
-    // Match <tool> blocks - more flexible regex
-    const toolRegex = /<tool>[\s\S]*?<name>([^<]+)<\/name>[\s\S]*?<description>([^<]*)<\/description>[\s\S]*?<arguments>([\s\S]*?)<\/arguments>[\s\S]*?<\/tool>/g
-    
-    let match
-    let matchCount = 0
-    while ((match = toolRegex.exec(content)) !== null) {
-      matchCount++
-      const name = match[1].trim()
-      const description = match[2].trim()
-      let argumentsStr = match[3].trim()
-      
-      console.log(`[Forwarder] Found tool #${matchCount}: ${name}`)
-      console.log(`[Forwarder] Description: ${description.substring(0, 50)}...`)
-      console.log(`[Forwarder] Arguments length: ${argumentsStr.length}`)
-      
-      // Parse JSON schema from arguments
-      let parameters = {}
-      try {
-        // Try to parse the arguments as JSON directly
-        const argsObj = JSON.parse(argumentsStr)
-        if (argsObj.jsonSchema) {
-          parameters = argsObj.jsonSchema
-          console.log(`[Forwarder] Parsed jsonSchema successfully`)
-        }
-      } catch (e) {
-        // Try alternative parsing
-        try {
-          const jsonSchemaMatch = argumentsStr.match(/"jsonSchema"\s*:\s*(\{[\s\S]*?\})\s*}\s*$/)
-          if (jsonSchemaMatch) {
-            parameters = JSON.parse(jsonSchemaMatch[1])
-            console.log(`[Forwarder] Parsed jsonSchema via regex`)
-          }
-        } catch (e2) {
-          console.log('[Forwarder] Failed to parse MCP tool arguments:', e)
-        }
-      }
-      
-      tools.push({
-        type: 'function',
-        function: {
-          name,
-          description,
-          parameters
-        }
-      })
-    }
-    
-    console.log(`[Forwarder] Total MCP tools extracted: ${tools.length}`)
-    return tools
-  }
-
-  /**
-   * Generate tool prompt in specified format
-   */
-  private generateToolPrompt(tools: ChatCompletionTool[], format: 'bracket' | 'xml'): string {
-    const toolDefinitions = tools.map(tool => {
-      const params = tool.function.parameters
-        ? JSON.stringify(tool.function.parameters)
-        : '{}'
-      return `Tool \`${tool.function.name}\`: ${tool.function.description || 'No description'}. Arguments JSON schema: ${params}`
-    }).join('\n')
-
-    if (format === 'xml') {
-      return `## Available Tools
-You can invoke the following developer tools. Call a tool only when it is required and follow the JSON schema exactly when providing arguments.
-
-${toolDefinitions}
-
-## Tool Call Protocol
-When you decide to call a tool, respond with:
-<tool_use>
-  <name>exact_tool_name</name>
-  <arguments>{"arg": "value"}</arguments>
-</tool_use>`
-    }
-
-    return `## Available Tools
-You can invoke the following developer tools. Call a tool only when it is required and follow the JSON schema exactly when providing arguments.
-
-CRITICAL: Tool names are CASE-SENSITIVE. You MUST use the exact tool name as defined below.
-
-${toolDefinitions}
-
-## Tool Call Protocol
-When you decide to call a tool, you MUST respond with NOTHING except a single [function_calls] block exactly like the template below:
-
-[function_calls]
-[call:exact_tool_name_from_list]{"argument": "value"}[/call]
-[/function_calls]
-
-CRITICAL RULES:
-1. EVERY tool call MUST start with [call:exact_tool_name] and end with [/call]
-2. The content between [call:...] and [/call] MUST be a raw JSON object on ONE LINE
-3. Do NOT output any other text before or after the [function_calls] block`
+  private applyToolCallsToResponse(result: any, transformed: ToolCallingTransformResult): void {
+    const engine = new ToolCallingEngine(storeManager.getConfig().toolCallingConfig)
+    engine.applyNonStreamResponse(result, transformed.plan)
   }
 
   /**
@@ -452,49 +325,9 @@ CRITICAL RULES:
   ): Promise<ForwardResult> {
     const startTime = Date.now()
 
-    // Check if it is a DeepSeek provider, use dedicated adapter
-    if (DeepSeekAdapter.isDeepSeekProvider(provider)) {
-      return this.forwardDeepSeek(request, account, provider, actualModel, startTime)
-    }
-
-    // Check if it is a GLM provider, use dedicated adapter
-    if (GLMAdapter.isGLMProvider(provider)) {
-      return this.forwardGLM(request, account, provider, actualModel, startTime)
-    }
-
-    // Check if it is a Kimi provider, use dedicated adapter
-    if (KimiAdapter.isKimiProvider(provider)) {
-      return this.forwardKimi(request, account, provider, actualModel, startTime)
-    }
-
-    // Check if it is a Qwen provider, use dedicated adapter
-    if (QwenAdapter.isQwenProvider(provider)) {
-      return this.forwardQwen(request, account, provider, actualModel, startTime)
-    }
-
-    // Check if it is a Qwen AI (International) provider, use dedicated adapter
-    if (QwenAiAdapter.isQwenAiProvider(provider)) {
-      return this.forwardQwenAi(request, account, provider, actualModel, startTime)
-    }
-
-    // Check if it is a Z.ai provider, use dedicated adapter
-    if (ZaiAdapter.isZaiProvider(provider)) {
-      return this.forwardZai(request, account, provider, actualModel, startTime)
-    }
-
-    // Check if it is a MiniMax provider, use dedicated adapter
-    if (MiniMaxAdapter.isMiniMaxProvider(provider)) {
-      return this.forwardMiniMax(request, account, provider, actualModel, startTime)
-    }
-
-    // Check if it is a Mimo provider, use dedicated adapter
-    if (MimoAdapter.isMimoProvider(provider)) {
-      return this.forwardMimo(request, account, provider, actualModel, startTime)
-    }
-
-    // Check if it is a Perplexity provider, use dedicated adapter
-    if (PerplexityAdapter.isPerplexityProvider(provider)) {
-      return this.forwardPerplexity(request, account, provider, actualModel, startTime)
+    const dedicatedForwarder = this.providerForwarders.find(forwarder => forwarder.matches(provider))
+    if (dedicatedForwarder) {
+      return dedicatedForwarder.forward(request, account, provider, actualModel, startTime)
     }
 
     try {
@@ -629,7 +462,9 @@ CRITICAL RULES:
         sessionId,
         deleteSessionCallback,
         transformedRequest.web_search,
-        transformedRequest.reasoning_effort
+        transformedRequest.reasoning_effort,
+        transformed.plan,
+        request.model
       )
       
       if (request.stream) {
@@ -649,7 +484,7 @@ CRITICAL RULES:
       // Non-streaming requests need to collect stream data and convert
       const result = await handler.handleNonStream(response.data)
       
-      this.applyToolCallsToResponse(result, request.model, request.tools)
+      this.applyToolCallsToResponse(result, transformed)
       
       if (deleteSessionCallback) {
         await deleteSessionCallback()
@@ -726,7 +561,7 @@ CRITICAL RULES:
         }
       }
 
-      const handler = new GLMStreamHandler(actualModel)
+      const handler = new GLMStreamHandler(actualModel, undefined, undefined, transformed.plan)
       
       if (request.stream) {
         const transformedStream = await handler.handleStream(response.data)
@@ -758,7 +593,7 @@ CRITICAL RULES:
 
       const result = await handler.handleNonStream(response.data)
       
-      this.applyToolCallsToResponse(result, request.model, request.tools)
+      this.applyToolCallsToResponse(result, transformed)
       
       if (shouldDeleteSession()) {
         const convId = handler.getConversationId()
@@ -818,7 +653,7 @@ CRITICAL RULES:
         }
       }
 
-      const handler = new KimiStreamHandler(actualModel, conversationId, !!request.reasoning_effort)
+      const handler = new KimiStreamHandler(actualModel, conversationId, !!request.reasoning_effort, transformed.plan)
       
       if (request.stream) {
         const transformedStream = await handler.handleStream(response.data)
@@ -850,7 +685,7 @@ CRITICAL RULES:
 
       const result = await handler.handleNonStream(response.data)
 
-      this.applyToolCallsToResponse(result, request.model, request.tools)
+      this.applyToolCallsToResponse(result, transformed)
 
       if (shouldDeleteSession()) {
         const realChatId = handler.getConversationId()
@@ -928,7 +763,7 @@ CRITICAL RULES:
           }
         : undefined
 
-      const handler = new QwenStreamHandler(actualModel, deleteSessionCallback)
+      const handler = new QwenStreamHandler(actualModel, deleteSessionCallback, transformed.plan)
 
       if (request.stream) {
         const transformedStream = await handler.handleStream(response.data, response)
@@ -946,7 +781,7 @@ CRITICAL RULES:
 
       const result = await handler.handleNonStream(response.data, response)
 
-      this.applyToolCallsToResponse(result, request.model, request.tools)
+      this.applyToolCallsToResponse(result, transformed)
 
       const sid = handler.getSessionId()
       if (deleteSessionCallback && sid) {
@@ -1035,7 +870,7 @@ CRITICAL RULES:
 
       const result = await handler.handleNonStream(response.data)
 
-      this.applyToolCallsToResponse(result, request.model, request.tools)
+      this.applyToolCallsToResponse(result, transformed)
 
       if (shouldDeleteSession()) {
         await adapter.deleteChat(chatId)
@@ -1126,7 +961,7 @@ CRITICAL RULES:
 
       const result = await handler.handleNonStream(response.data)
 
-      this.applyToolCallsToResponse(result, request.model, request.tools)
+      this.applyToolCallsToResponse(result, transformed)
       
       if (deleteChatCallback) {
         await deleteChatCallback(chatId)
@@ -1222,7 +1057,7 @@ CRITICAL RULES:
       }
 
       if (response) {
-        this.applyToolCallsToResponse(response.data, request.model, request.tools)
+        this.applyToolCallsToResponse(response.data, transformed)
         
         if (deleteChatCallback) {
           await deleteChatCallback(chatId)
@@ -1265,14 +1100,20 @@ CRITICAL RULES:
     startTime: number
   ): Promise<ForwardResult> {
     try {
+      const transformed = this.transformRequestForPromptToolUse(request, provider)
+      const transformedRequest = {
+        ...request,
+        messages: transformed.messages,
+        tools: transformed.tools,
+      }
       const adapter = new MimoAdapter(provider, account)
 
-      const { response, conversationId } = await adapter.chatCompletion({
-        model: request.model,
+      const { response, conversationId, query } = await adapter.chatCompletion({
+        model: actualModel,
         originalModel: request.originalModel,
-        messages: request.messages as any,
-        stream: request.stream,
-        temperature: request.temperature,
+        messages: transformedRequest.messages as any,
+        stream: transformedRequest.stream,
+        temperature: transformedRequest.temperature,
       })
 
       const latency = Date.now() - startTime
@@ -1287,7 +1128,17 @@ CRITICAL RULES:
         }
       }
 
-      const handler = new MimoStreamHandler(actualModel, conversationId, 'separate')
+      const deleteSessionCallback = shouldDeleteSession()
+        ? async (sessionId: string) => {
+            try {
+              await adapter.deleteSession(sessionId)
+            } catch (error) {
+              console.error('[Mimo] Failed to delete session:', error)
+            }
+          }
+        : undefined
+
+      const handler = new MimoStreamHandler(actualModel, conversationId, 'separate', transformed.plan)
 
       if (request.stream) {
         const transformedStream = new PassThrough()
@@ -1297,6 +1148,14 @@ CRITICAL RULES:
           try {
             for await (const chunk of openAIStream) {
               transformedStream.write(chunk)
+            }
+            await adapter.generateConversationTitle(
+              conversationId,
+              query,
+              handler.getAssistantContentForTitle()
+            )
+            if (deleteSessionCallback) {
+              await deleteSessionCallback(conversationId)
             }
             transformedStream.end()
           } catch (error) {
@@ -1317,12 +1176,22 @@ CRITICAL RULES:
       }
 
       const result = await handler.handleNonStream(response.data)
+      const parsedResult = JSON.parse(result)
+      this.applyToolCallsToResponse(parsedResult, transformed)
+      await adapter.generateConversationTitle(
+        conversationId,
+        query,
+        handler.getAssistantContentForTitle()
+      )
+      if (deleteSessionCallback) {
+        await deleteSessionCallback(conversationId)
+      }
 
       return {
         success: true,
         status: response.status,
         headers: this.extractHeaders(response.headers),
-        body: JSON.parse(result),
+        body: parsedResult,
         skipTransform: true,
         latency,
         providerSessionId: conversationId,
@@ -1392,7 +1261,7 @@ CRITICAL RULES:
       const handler = new PerplexityStreamHandler(actualModel, sessionId, undefined, adapter)
       const result = await handler.handleNonStream(stream)
       
-      this.applyToolCallsToResponse(result, request.model, request.tools)
+      this.applyToolCallsToResponse(result, transformed)
       
       if (shouldDeleteSession()) {
         await adapter.deleteSession(sessionId)

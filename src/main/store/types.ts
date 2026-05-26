@@ -4,6 +4,8 @@
  */
 
 import type { ProviderStatus } from '../../shared/types'
+import type { LegacyToolPromptConfig, ToolCallingConfig } from '../../shared/toolCalling.ts'
+import { DEFAULT_TOOL_CALLING_CONFIG } from '../../shared/toolCalling.ts'
 
 /**
  * Account Status Enum
@@ -181,6 +183,8 @@ export interface AppConfig {
   loadBalanceStrategy: LoadBalanceStrategy
   /** Model mapping configuration */
   modelMappings: Record<string, ModelMapping>
+  /** Default model mappings have been seeded into editable config */
+  defaultModelMappingsSeeded?: boolean
   /** UI theme */
   theme: Theme
   /** Auto start on boot */
@@ -207,8 +211,10 @@ export interface AppConfig {
   oauthProxyMode: 'system' | 'none'
   /** Session management configuration */
   sessionConfig: SessionConfig
-  /** Tool prompt injection configuration */
-  toolPromptConfig: ToolPromptConfig
+  /** Tool calling configuration */
+  toolCallingConfig: ToolCallingConfig
+  /** Legacy migration input from pre-v2 tool prompt settings */
+  toolPromptConfig?: LegacyToolPromptConfig
   /** Management API configuration */
   managementApi: ManagementApiConfig
   /** Context management configuration */
@@ -339,29 +345,7 @@ export interface SessionConfig {
   maxSessionsPerAccount: number
 }
 
-/**
- * Injection Strategy (Simplified)
- * Controls whether to inject tool prompts
- * - auto: Detect client automatically, skip for known clients (default)
- * - always: Always inject tool prompts
- * - never: Never inject tool prompts
- */
-export type InjectionStrategy = 'auto' | 'always' | 'never'
-
-/**
- * Tool Prompt Configuration Interface (Simplified)
- * Controls how tool prompts are injected for models without native function calling
- */
-export interface ToolPromptConfig {
-  /** Injection mode: 'auto' detects client, 'always' always injects, 'never' disables injection */
-  mode: InjectionStrategy
-  /** Default protocol format: 'bracket' for [function_calls] format, 'xml' for <tool_use> format */
-  defaultFormat: 'bracket' | 'xml'
-  /** Custom prompt template (optional). Supports variables: {{tools}}, {{tool_names}}, {{format}} */
-  customPromptTemplate?: string
-  /** Whether to enable tool call parsing from model output (default: true) */
-  enableToolCallParsing: boolean
-}
+export type { LegacyToolPromptConfig, ToolCallingConfig }
 
 /**
  * Management API Configuration Interface
@@ -618,6 +602,17 @@ export interface ProviderModelOverrides {
  */
 export type UserModelOverrides = Record<string, ProviderModelOverrides>
 
+export const DEEPSEEK_PRIMARY_MODELS = ['deepseek-v4-flash', 'deepseek-v4-pro']
+
+export const DEEPSEEK_LEGACY_MODEL_MAPPING_NAMES = [
+  'deepseek-chat',
+  'deepseek-reasoner',
+  'DeepSeek-V3.2',
+  'DeepSeek-Search',
+  'DeepSeek-R1',
+  'DeepSeek-R1-Search',
+]
+
 /**
  * Effective Model Information
  * Combined model info after merging defaults with user overrides
@@ -685,15 +680,7 @@ export const DEFAULT_STATISTICS: PersistentStatistics = {
  */
 export const DEFAULT_USER_MODEL_OVERRIDES: UserModelOverrides = {}
 
-/**
- * Default Tool Prompt Configuration
- */
-export const DEFAULT_TOOL_PROMPT_CONFIG: ToolPromptConfig = {
-  mode: 'auto',
-  defaultFormat: 'bracket',
-  customPromptTemplate: undefined,
-  enableToolCallParsing: true,
-}
+export const DEFAULT_TOOL_CALLING_CONFIG_VALUE = DEFAULT_TOOL_CALLING_CONFIG
 
 /**
  * Default Management API Configuration
@@ -724,6 +711,84 @@ export const DEFAULT_REQUEST_LOG_CONFIG: RequestLogConfig = {
   redactSensitiveData: true,
 }
 
+export const DEFAULT_DEEPSEEK_MODEL_MAPPINGS: Record<string, ModelMapping> = {
+  'deepseek-v4-flash-think': {
+    requestModel: 'deepseek-v4-flash-think',
+    actualModel: 'deepseek-v4-flash',
+    preferredProviderId: 'deepseek',
+  },
+  'deepseek-v4-flash-search': {
+    requestModel: 'deepseek-v4-flash-search',
+    actualModel: 'deepseek-v4-flash',
+    preferredProviderId: 'deepseek',
+  },
+  'deepseek-v4-flash-think-search': {
+    requestModel: 'deepseek-v4-flash-think-search',
+    actualModel: 'deepseek-v4-flash',
+    preferredProviderId: 'deepseek',
+  },
+  'deepseek-v4-pro-think': {
+    requestModel: 'deepseek-v4-pro-think',
+    actualModel: 'deepseek-v4-pro',
+    preferredProviderId: 'deepseek',
+  },
+  'deepseek-v4-pro-search': {
+    requestModel: 'deepseek-v4-pro-search',
+    actualModel: 'deepseek-v4-pro',
+    preferredProviderId: 'deepseek',
+  },
+  'deepseek-v4-pro-think-search': {
+    requestModel: 'deepseek-v4-pro-think-search',
+    actualModel: 'deepseek-v4-pro',
+    preferredProviderId: 'deepseek',
+  },
+}
+
+export function createDefaultModelMappings(): Record<string, ModelMapping> {
+  return Object.fromEntries(
+    Object.entries(DEFAULT_DEEPSEEK_MODEL_MAPPINGS).map(([key, mapping]) => [key, { ...mapping }]),
+  )
+}
+
+export function isDefaultModelMapping(requestModel: string): boolean {
+  return requestModel in DEFAULT_DEEPSEEK_MODEL_MAPPINGS
+}
+
+export function normalizeModelMappingsWithDefaults(
+  mappings?: Record<string, ModelMapping>
+): Record<string, ModelMapping> {
+  const legacyModelNames = new Set(DEEPSEEK_LEGACY_MODEL_MAPPING_NAMES)
+  const customMappings = Object.fromEntries(
+    Object.entries(mappings || {}).filter(([requestModel]) =>
+      !isDefaultModelMapping(requestModel) && !legacyModelNames.has(requestModel)
+    ),
+  )
+
+  return {
+    ...createDefaultModelMappings(),
+    ...customMappings,
+  }
+}
+
+export function sanitizeDeepSeekModelOverrides(
+  overrides?: ProviderModelOverrides
+): ProviderModelOverrides {
+  const migratedModelNames = new Set([
+    ...DEEPSEEK_PRIMARY_MODELS,
+    ...DEEPSEEK_LEGACY_MODEL_MAPPING_NAMES,
+    ...Object.keys(DEFAULT_DEEPSEEK_MODEL_MAPPINGS),
+  ])
+
+  return {
+    addedModels: (overrides?.addedModels || []).filter(model =>
+      !migratedModelNames.has(model.displayName)
+    ),
+    excludedModels: (overrides?.excludedModels || []).filter(model =>
+      DEEPSEEK_PRIMARY_MODELS.includes(model)
+    ),
+  }
+}
+
 /**
  * Default Application Configuration
  */
@@ -731,7 +796,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   proxyPort: 8080,
   proxyHost: '127.0.0.1',
   loadBalanceStrategy: 'round-robin',
-  modelMappings: {},
+  modelMappings: createDefaultModelMappings(),
+  defaultModelMappingsSeeded: true,
   theme: 'system',
   autoStart: false,
   autoStartProxy: false,
@@ -745,7 +811,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   enableApiKey: false,
   oauthProxyMode: 'system',
   sessionConfig: DEFAULT_SESSION_CONFIG,
-  toolPromptConfig: DEFAULT_TOOL_PROMPT_CONFIG,
+  toolCallingConfig: DEFAULT_TOOL_CALLING_CONFIG,
+  toolPromptConfig: undefined,
   managementApi: DEFAULT_MANAGEMENT_API_CONFIG,
   contextManagement: DEFAULT_CONTEXT_MANAGEMENT_CONFIG,
 }
@@ -754,4 +821,4 @@ export const DEFAULT_CONFIG: AppConfig = {
  * Built-in Provider Configuration
  * Re-exported from providers/builtin/index.ts to avoid duplication
  */
-export { builtinProviders as BUILTIN_PROVIDERS } from '../providers/builtin'
+export { builtinProviders as BUILTIN_PROVIDERS } from '../providers/builtin/index.ts'

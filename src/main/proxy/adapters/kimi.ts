@@ -1,5 +1,5 @@
 /**
- * Kimi K2.5 Adapter
+ * Kimi K2.6 Adapter
  * Implements Kimi web API protocol with thinking mode and web search support
  */
 
@@ -8,13 +8,11 @@ import { Account, Provider } from '../../store/types'
 import { PassThrough } from 'stream'
 import { toolsToSystemPrompt, TOOL_WRAP_HINT, hasToolPromptInjected } from '../utils/tools'
 import { parseToolCallsFromText } from '../utils/toolParser'
-import { 
-  createToolCallState, 
-  processStreamContent, 
-  flushToolCallBuffer,
-  createBaseChunk,
-  ToolCallState 
-} from '../utils/streamToolHandler'
+import { createBaseChunk } from '../utils/streamToolHandler'
+import { createKimiChatPayload, encodeKimiGrpcFrame } from './providerModelOptions'
+import { getProviderToolProfile } from '../toolCalling/providerProfiles'
+import { ToolStreamParser } from '../toolCalling/ToolStreamParser'
+import type { ToolCallingPlan } from '../toolCalling/types'
 
 const KIMI_API_BASE = 'https://www.kimi.com'
 
@@ -157,21 +155,29 @@ export class KimiAdapter {
   }
 
   private messagesPrepare(messages: KimiMessage[], toolsPrompt?: string, isMultiTurn: boolean = false): string {
+    const toolProfile = getProviderToolProfile('kimi')
     // Process messages including tool calls and tool responses
     const processedMessages = messages.map(msg => {
       // Handle tool calls in assistant message
       if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
-        const toolCallsText = msg.tool_calls.map(tc => {
-          return `[call:${tc.function.name}]${tc.function.arguments}[/call]`
-        }).join('\n')
-        return { ...msg, content: `[function_calls]\n${toolCallsText}\n[/function_calls]` }
+        return {
+          ...msg,
+          content: toolProfile.formatAssistantToolCalls(msg.tool_calls.map(tc => ({
+            id: tc.id,
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          }))),
+        }
       }
       // Handle tool response message
       if (msg.role === 'tool' && msg.tool_call_id) {
         return { 
           ...msg, 
           role: 'user' as const,
-          content: `[TOOL_RESULT for ${msg.tool_call_id}] ${msg.content || ''}` 
+          content: toolProfile.formatToolResult({
+            toolCallId: msg.tool_call_id,
+            content: String(msg.content || ''),
+          }),
         }
       }
       return msg
@@ -318,32 +324,15 @@ export class KimiAdapter {
       console.log('[Kimi] Web search enabled (from model name)')
     }
 
-    const jsonBody = JSON.stringify({
-      scenario: 'SCENARIO_K2D5',
-      chat_id: '',
-      tools: enableWebSearch ? [{ type: 'TOOL_TYPE_SEARCH', search: {} }] : [],
-      message: {
-        parent_id: '',
-        role: 'user',
-        blocks: [{
-          message_id: '',
-          text: { content }
-        }],
-        scenario: 'SCENARIO_K2D5'
-      },
-      options: {
-        thinking: enableThinking
-      }
+    const payload = createKimiChatPayload({
+      model: request.model,
+      content,
+      enableWebSearch,
+      enableThinking,
     })
+    const frameBuffer = encodeKimiGrpcFrame(payload)
 
-    // gRPC-Web frame format: 1 byte flag (0x00) + 4 bytes length (big-endian) + JSON payload
-    const jsonBuffer = Buffer.from(jsonBody, 'utf8')
-    const frameBuffer = Buffer.alloc(5 + jsonBuffer.length)
-    frameBuffer.writeUInt8(0, 0) // flag = 0
-    frameBuffer.writeUInt32BE(jsonBuffer.length, 1) // length
-    jsonBuffer.copy(frameBuffer, 5)
-
-    console.log('[Kimi] Request body length:', frameBuffer.length, 'JSON length:', jsonBuffer.length)
+    console.log('[Kimi] Request body length:', frameBuffer.length, 'JSON length:', frameBuffer.length - 5)
 
     const response = await axios.post(
       `${KIMI_API_BASE}/apiv2/kimi.gateway.chat.v1.ChatService/Chat`,
@@ -411,18 +400,20 @@ export class KimiStreamHandler {
   private model: string
   private conversationId: string
   private enableThinking: boolean
-  private toolCallState: ToolCallState
+  private toolStreamParser?: ToolStreamParser
+  private toolCallingPlan?: ToolCallingPlan
   private realChatId: string | null = null
   private lastMessageId: string | null = null
   private hasError: boolean = false
   private currentPhase: 'thinking' | 'answer' | undefined = undefined
   private reasoningBuffer: string = ''
 
-  constructor(model: string, conversationId: string, enableThinking: boolean = false) {
+  constructor(model: string, conversationId: string, enableThinking: boolean = false, toolCallingPlan?: ToolCallingPlan) {
     this.model = model
     this.conversationId = conversationId
     this.enableThinking = enableThinking
-    this.toolCallState = createToolCallState()
+    this.toolCallingPlan = toolCallingPlan
+    this.toolStreamParser = toolCallingPlan?.shouldParseResponse ? new ToolStreamParser(toolCallingPlan) : undefined
   }
 
   getConversationId(): string | null {
@@ -669,11 +660,18 @@ export class KimiStreamHandler {
     }
 
     if (data.done !== undefined) {
+      const chatId = this.getConversationId() || this.conversationId
+      const baseChunk = createBaseChunk(chatId, this.model, created)
+      const flushChunks = this.toolStreamParser?.flush(baseChunk) ?? []
+      for (const outChunk of flushChunks) {
+        transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
+      }
+
       transStream.write(`data: ${JSON.stringify({
         id: this.getConversationId(),
         model: this.model,
         object: 'chat.completion.chunk',
-        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        choices: [{ index: 0, delta: {}, finish_reason: this.toolStreamParser?.hasEmittedToolCall() ? 'tool_calls' : 'stop' }],
         created,
       })}\n\n`)
       transStream.end('data: [DONE]\n\n')
@@ -685,13 +683,7 @@ export class KimiStreamHandler {
     // Use getConversationId() to get the real chat_id if available
     const chatId = this.getConversationId() || this.conversationId
     const baseChunk = createBaseChunk(chatId, this.model, created)
-    const { chunks: outputChunks } = processStreamContent(
-      content, 
-      this.toolCallState, 
-      baseChunk, 
-      false,
-      'kimi'
-    )
+    const outputChunks = this.toolStreamParser?.push(content, baseChunk, false) ?? []
 
     // Check if we emitted tool calls first
     const hasToolCalls = outputChunks.some(c => c.choices?.[0]?.delta?.tool_calls)
@@ -700,9 +692,11 @@ export class KimiStreamHandler {
       transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
     }
 
-    // If we emitted tool calls, skip regular content output
-    if (hasToolCalls) {
-      // Tool calls emitted, skipping regular content
+    if (!this.toolStreamParser || (!this.toolStreamParser.isBuffering() && !this.toolStreamParser.hasEmittedToolCall() && !hasToolCalls && outputChunks.length === 0)) {
+      transStream.write(`data: ${JSON.stringify({
+        ...baseChunk,
+        choices: [{ index: 0, delta: { content }, finish_reason: null }],
+      })}\n\n`)
     }
   }
 
@@ -784,7 +778,9 @@ export class KimiStreamHandler {
               }
 
               if (data.done !== undefined) {
-                const { content: cleanContent, toolCalls } = parseToolCallsFromText(content, 'kimi')
+                const { content: cleanContent, toolCalls } = this.toolCallingPlan?.shouldParseResponse
+                  ? { content, toolCalls: [] }
+                  : parseToolCallsFromText(content, 'kimi')
 
                 const message: any = {
                   role: 'assistant',
@@ -825,7 +821,9 @@ export class KimiStreamHandler {
 
       stream.once('error', reject)
       stream.once('close', () => {
-        const { content: cleanContent, toolCalls } = parseToolCallsFromText(content, 'kimi')
+        const { content: cleanContent, toolCalls } = this.toolCallingPlan?.shouldParseResponse
+          ? { content, toolCalls: [] }
+          : parseToolCallsFromText(content, 'kimi')
 
         const message: any = {
           role: 'assistant',

@@ -27,7 +27,7 @@ import { useProxyStore } from '@/stores/proxyStore'
 import { useNavigationStore } from '@/stores/navigationStore'
 import { useToast } from '@/hooks/use-toast'
 import type { ModelMapping, Provider, Account } from '@/types/electron'
-import { ArrowRight, Plus, Pencil, Trash2, Search, Sparkles, Save, RotateCcw, AlertTriangle } from 'lucide-react'
+import { ArrowRight, Plus, Pencil, Trash2, Search, Sparkles, Save, RotateCcw, AlertTriangle, Lock } from 'lucide-react'
 
 interface ModelMappingConfigProps {
   onConfigChange?: () => void
@@ -41,6 +41,57 @@ interface MappingFormData {
 }
 
 const BLOCKER_ID = 'model-mapping-changes'
+const MODEL_OPTION_SEPARATOR = '::'
+
+const createModelOptionValue = (providerId: string, model: string): string =>
+  `${providerId}${MODEL_OPTION_SEPARATOR}${model}`
+
+const parseModelOptionValue = (value: string): { providerId: string; model: string } | null => {
+  const separatorIndex = value.indexOf(MODEL_OPTION_SEPARATOR)
+  if (separatorIndex <= 0) {
+    return null
+  }
+
+  return {
+    providerId: value.slice(0, separatorIndex),
+    model: value.slice(separatorIndex + MODEL_OPTION_SEPARATOR.length),
+  }
+}
+
+const DEFAULT_MODEL_MAPPINGS: Record<string, ModelMapping> = {
+  'deepseek-v4-flash-think': {
+    requestModel: 'deepseek-v4-flash-think',
+    actualModel: 'deepseek-v4-flash',
+    preferredProviderId: 'deepseek',
+  },
+  'deepseek-v4-flash-search': {
+    requestModel: 'deepseek-v4-flash-search',
+    actualModel: 'deepseek-v4-flash',
+    preferredProviderId: 'deepseek',
+  },
+  'deepseek-v4-flash-think-search': {
+    requestModel: 'deepseek-v4-flash-think-search',
+    actualModel: 'deepseek-v4-flash',
+    preferredProviderId: 'deepseek',
+  },
+  'deepseek-v4-pro-think': {
+    requestModel: 'deepseek-v4-pro-think',
+    actualModel: 'deepseek-v4-pro',
+    preferredProviderId: 'deepseek',
+  },
+  'deepseek-v4-pro-search': {
+    requestModel: 'deepseek-v4-pro-search',
+    actualModel: 'deepseek-v4-pro',
+    preferredProviderId: 'deepseek',
+  },
+  'deepseek-v4-pro-think-search': {
+    requestModel: 'deepseek-v4-pro-think-search',
+    actualModel: 'deepseek-v4-pro',
+    preferredProviderId: 'deepseek',
+  },
+}
+
+const DEFAULT_MODEL_MAPPING_KEYS = new Set(Object.keys(DEFAULT_MODEL_MAPPINGS))
 
 export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) {
   const { t } = useTranslation()
@@ -59,6 +110,7 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
   const [accounts, setAccounts] = useState<Account[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false)
   const [editingMapping, setEditingMapping] = useState<ModelMapping | null>(null)
   const [hasChanges, setHasChanges] = useState(false)
   const isInitializedRef = useRef(false)
@@ -137,6 +189,10 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
   )
 
   const handleOpenDialog = (mapping?: ModelMapping) => {
+    if (mapping && DEFAULT_MODEL_MAPPING_KEYS.has(mapping.requestModel)) {
+      return
+    }
+
     if (mapping) {
       setEditingMapping(mapping)
       setFormData({
@@ -213,6 +269,10 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
   }
 
   const handleDeleteMapping = (requestModel: string) => {
+    if (DEFAULT_MODEL_MAPPING_KEYS.has(requestModel)) {
+      return
+    }
+
     const updatedMappings = mappings.filter(m => m.requestModel !== requestModel)
     setMappings(updatedMappings)
     setHasChanges(true)
@@ -259,34 +319,123 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
     })
   }
 
-  const filteredAccounts = formData.preferredProviderId
-    ? accounts.filter(a => a.providerId === formData.preferredProviderId)
-    : accounts
+  const handleRestoreDefaults = async () => {
+    const defaultMappings = Object.values(DEFAULT_MODEL_MAPPINGS)
+    const success = await saveAppConfig({
+      modelMappings: DEFAULT_MODEL_MAPPINGS,
+    })
+
+    if (success) {
+      setMappings(defaultMappings)
+      setModelMappings(defaultMappings)
+      setOriginalMappings(defaultMappings)
+      setHasChanges(false)
+      setIsRestoreDialogOpen(false)
+      toast({
+        title: t('providers.updateSuccess'),
+        description: t('proxy.defaultsRestored'),
+      })
+    } else {
+      toast({
+        title: t('providers.updateFailed'),
+        description: t('proxy.configSaveFailed'),
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const selectedProviderId = formData.preferredProviderId === AUTO_SELECT_VALUE ? '' : formData.preferredProviderId
+
+  const filteredAccounts = selectedProviderId
+    ? accounts.filter(a => a.providerId === selectedProviderId)
+    : []
 
   const isWildcard = formData.requestModel.includes('*')
 
   const modelOptions: ComboboxOption[] = useMemo(() => {
     const options: ComboboxOption[] = []
-    const addedModels = new Set<string>()
 
     providers.forEach(provider => {
       provider.supportedModels?.forEach(model => {
-        if (!addedModels.has(model)) {
-          addedModels.add(model)
-          options.push({
-            value: model,
-            label: model,
-            group: provider.name,
-          })
-        }
+        options.push({
+          value: createModelOptionValue(provider.id, model),
+          label: model,
+          group: provider.name,
+        })
       })
     })
 
-    return options.sort((a, b) => a.value.localeCompare(b.value))
+    return options.sort((a, b) =>
+      a.label === b.label
+        ? (a.group || '').localeCompare(b.group || '')
+        : a.label.localeCompare(b.label)
+    )
   }, [providers])
 
+  const selectedModelOptionValue = selectedProviderId && formData.actualModel
+    ? createModelOptionValue(selectedProviderId, formData.actualModel)
+    : ''
+
+  const modelMatchedProviders = useMemo(() => {
+    if (!formData.actualModel.trim()) {
+      return providers
+    }
+
+    return providers.filter(provider =>
+      provider.supportedModels?.includes(formData.actualModel)
+    )
+  }, [formData.actualModel, providers])
+
+  const providerOptions = formData.actualModel.trim() ? modelMatchedProviders : providers
+
+  useEffect(() => {
+    if (
+      !formData.preferredProviderId ||
+      formData.preferredProviderId === AUTO_SELECT_VALUE ||
+      providerOptions.some(provider => provider.id === formData.preferredProviderId)
+    ) {
+      return
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      preferredProviderId: '',
+      preferredAccountId: '',
+    }))
+  }, [formData.preferredProviderId, providerOptions])
+
   const handleModelChange = (value: string) => {
-    setFormData(prev => ({ ...prev, actualModel: value }))
+    const selectedOption = parseModelOptionValue(value)
+    const selectedModel = selectedOption?.model || value
+    const selectedProviderId = selectedOption?.providerId || ''
+    const nextProviders = selectedModel.trim()
+      ? providers.filter(provider => provider.supportedModels?.includes(selectedModel))
+      : providers
+    const shouldSelectProvider =
+      selectedProviderId && nextProviders.some(provider => provider.id === selectedProviderId)
+
+    setFormData(prev => {
+      if (shouldSelectProvider) {
+        return {
+          ...prev,
+          actualModel: selectedModel,
+          preferredProviderId: selectedProviderId,
+          preferredAccountId: prev.preferredProviderId === selectedProviderId ? prev.preferredAccountId : '',
+        }
+      }
+
+      const canKeepProvider =
+        !prev.preferredProviderId ||
+        prev.preferredProviderId === AUTO_SELECT_VALUE ||
+        nextProviders.some(provider => provider.id === prev.preferredProviderId)
+
+      return {
+        ...prev,
+        actualModel: selectedModel,
+        preferredProviderId: canKeepProvider ? prev.preferredProviderId : '',
+        preferredAccountId: canKeepProvider ? prev.preferredAccountId : '',
+      }
+    })
   }
 
   return (
@@ -307,6 +456,37 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
         <CardDescription>{t('proxy.modelMappingDesc')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {hasChanges && (
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 p-4 rounded-lg border border-amber-500/20">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2 text-sm">
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                <span className="text-amber-700 dark:text-amber-400 font-medium">{t('proxy.unsavedChangesHint')}</span>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleReset}
+                  disabled={isLoading}
+                >
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  {t('common.reset')}
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSaveAll}
+                  disabled={isLoading}
+                  className="bg-amber-600 hover:bg-amber-700"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  {isLoading ? t('providers.saving') : t('proxy.saveConfig')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -317,10 +497,16 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
               className="pl-9"
             />
           </div>
-          <Button onClick={() => handleOpenDialog()}>
-            <Plus className="h-4 w-4 mr-2" />
-            {t('proxy.addMapping')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setIsRestoreDialogOpen(true)}>
+              <RotateCcw className="h-4 w-4 mr-2" />
+              {t('proxy.restoreDefaults')}
+            </Button>
+            <Button onClick={() => handleOpenDialog()}>
+              <Plus className="h-4 w-4 mr-2" />
+              {t('proxy.addMapping')}
+            </Button>
+          </div>
         </div>
 
         {filteredMappings.length > 0 ? (
@@ -331,6 +517,7 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
                   <TableHead>{t('proxy.requestModel')}</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                   <TableHead>{t('proxy.actualModel')}</TableHead>
+                  <TableHead className="w-[110px] whitespace-nowrap">{t('proxy.mappingSource')}</TableHead>
                   <TableHead>{t('proxy.preferredProvider')}</TableHead>
                   <TableHead>{t('proxy.preferredAccount')}</TableHead>
                   <TableHead className="w-[100px]">{t('common.actions')}</TableHead>
@@ -341,6 +528,7 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
                   const provider = providers.find(p => p.id === mapping.preferredProviderId)
                   const account = accounts.find(a => a.id === mapping.preferredAccountId)
                   const isWildcardMapping = mapping.requestModel.includes('*')
+                  const isBuiltInMapping = DEFAULT_MODEL_MAPPING_KEYS.has(mapping.requestModel)
                   
                   return (
                     <TableRow key={mapping.requestModel}>
@@ -357,6 +545,16 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
                       </TableCell>
                       <TableCell>
                         <code className="text-sm">{mapping.actualModel}</code>
+                      </TableCell>
+                      <TableCell>
+                        {isBuiltInMapping ? (
+                          <Badge variant="secondary" className="gap-1 whitespace-nowrap">
+                            <Lock className="h-3 w-3 shrink-0" />
+                            {t('proxy.builtInMapping')}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-sm whitespace-nowrap">{t('proxy.customMapping')}</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {provider ? (
@@ -378,7 +576,9 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
                             variant="ghost"
                             size="icon"
                             onClick={() => handleOpenDialog(mapping)}
+                            disabled={isBuiltInMapping}
                             className="h-8 w-8"
+                            title={isBuiltInMapping ? t('proxy.builtInMappingReadonly') : t('common.edit')}
                           >
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -386,7 +586,9 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
                             variant="ghost"
                             size="icon"
                             onClick={() => handleDeleteMapping(mapping.requestModel)}
+                            disabled={isBuiltInMapping}
                             className="h-8 w-8 text-destructive hover:text-destructive"
+                            title={isBuiltInMapping ? t('proxy.builtInMappingReadonly') : t('common.delete')}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -428,37 +630,6 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
         </div>
       </CardContent>
 
-      {hasChanges && (
-        <div className="border-t bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 p-4 rounded-b-[16px]">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm">
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
-              <span className="text-amber-700 dark:text-amber-400 font-medium">{t('proxy.unsavedChangesHint')}</span>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleReset}
-                disabled={isLoading}
-              >
-                <RotateCcw className="h-4 w-4 mr-2" />
-                {t('common.reset')}
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleSaveAll}
-                disabled={isLoading}
-                className="bg-amber-600 hover:bg-amber-700"
-              >
-                <Save className="h-4 w-4 mr-2" />
-                {isLoading ? t('providers.saving') : t('proxy.saveConfig')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -496,7 +667,7 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
               <Label htmlFor="actualModel">{t('proxy.actualModel')}</Label>
               <Combobox
                 options={modelOptions}
-                value={formData.actualModel}
+                value={selectedModelOptionValue}
                 onChange={handleModelChange}
                 placeholder={t('proxy.selectModel')}
                 emptyText={t('proxy.noModelFound')}
@@ -521,7 +692,7 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={AUTO_SELECT_VALUE}>{t('proxy.autoSelect')}</SelectItem>
-                  {providers.map((provider) => (
+                  {providerOptions.map((provider) => (
                     <SelectItem key={provider.id} value={provider.id}>
                       {provider.name}
                     </SelectItem>
@@ -535,10 +706,10 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
               <Select
                 value={formData.preferredAccountId}
                 onValueChange={(value) => setFormData(prev => ({ ...prev, preferredAccountId: value }))}
-                disabled={!formData.preferredProviderId}
+                disabled={!selectedProviderId}
               >
                 <SelectTrigger id="account">
-                  <SelectValue placeholder={formData.preferredProviderId ? t('proxy.autoSelect') : t('proxy.selectProviderFirst')} />
+                  <SelectValue placeholder={selectedProviderId ? t('proxy.autoSelect') : t('proxy.selectProviderFirst')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={AUTO_SELECT_VALUE}>{t('proxy.autoSelect')}</SelectItem>
@@ -558,6 +729,26 @@ export function ModelMappingConfig({ onConfigChange }: ModelMappingConfigProps) 
             </Button>
             <Button onClick={handleSaveMapping}>
               {editingMapping ? t('providers.updateSuccess') : t('common.add')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isRestoreDialogOpen} onOpenChange={setIsRestoreDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('proxy.restoreDefaults')}</DialogTitle>
+            <DialogDescription>
+              {t('proxy.confirmRestoreDefaults')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRestoreDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={handleRestoreDefaults} disabled={isLoading}>
+              <RotateCcw className="h-4 w-4 mr-2" />
+              {t('proxy.restoreDefaults')}
             </Button>
           </DialogFooter>
         </DialogContent>
