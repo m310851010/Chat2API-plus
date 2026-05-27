@@ -17,9 +17,11 @@ import { generateManagementSecret } from '../proxy/middleware/managementAuth'
 import { UpdaterManager } from '../updater'
 import { DeepSeekAdapter } from '../proxy/adapters/deepseek'
 import { GLMAdapter } from '../proxy/adapters/glm'
+import { KimiAdapter } from '../proxy/adapters/kimi'
 import { MimoAdapter } from '../proxy/adapters/mimo'
 import { MiniMaxAdapter } from '../proxy/adapters/minimax'
 import { PerplexityAdapter } from '../proxy/adapters/perplexity'
+import { QwenAdapter } from '../proxy/adapters/qwen'
 import { QwenAiAdapter } from '../proxy/adapters/qwen-ai'
 import { ZaiAdapter } from '../proxy/adapters/zai'
 import type { Provider, Account, ProxyStatus, ProviderCheckResult, OAuthResult, AuthType, CredentialField, LogLevel, LogEntry, ProviderVendor, AppConfig } from '../../shared/types'
@@ -31,6 +33,8 @@ let proxyStartTime: number | null = null
 const updaterManager = UpdaterManager.getInstance()
 
 const clearChatsHandlers: Record<string, (provider: Provider, account: Account) => Promise<boolean>> = {
+  kimi: async (provider, account) => new KimiAdapter(provider, account).deleteAllChats(),
+  qwen: async (provider, account) => new QwenAdapter(provider, account).deleteAllChats(),
   'qwen-ai': async (provider, account) => new QwenAiAdapter(provider, account).deleteAllChats(),
   minimax: async (provider, account) => new MiniMaxAdapter(provider, account).deleteAllChats(),
   zai: async (provider, account) => new ZaiAdapter(provider, account).deleteAllChats(),
@@ -85,6 +89,7 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
         const status: ProxyStatus = {
           isRunning: true,
           port: proxyPort,
+          host: proxyHost,
           uptime: 0,
           connections: 0,
         }
@@ -118,6 +123,7 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
         const status: ProxyStatus = {
           isRunning: true,
           port: proxyPort,
+          host: proxyHost,
           uptime: 0,
           connections: 0,
         }
@@ -147,6 +153,7 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
         const status: ProxyStatus = {
           isRunning: false,
           port: proxyStatusManager.getPort(),
+          host: storeManager.getConfig().proxyHost || proxyStatusManager.getHost(),
           uptime: proxyStartTime ? Date.now() - proxyStartTime : 0,
           connections: 0,
         }
@@ -166,9 +173,13 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
   ipcMain.handle(IpcChannels.PROXY_GET_STATUS, async (): Promise<ProxyStatus> => {
     const isRunning = proxyServer !== null
     const port = proxyStatusManager.getPort()
+    const host = isRunning
+      ? proxyStatusManager.getHost()
+      : storeManager.getConfig().proxyHost || proxyStatusManager.getHost()
     return {
       isRunning,
       port,
+      host,
       uptime: proxyStartTime && isRunning ? Date.now() - proxyStartTime : 0,
       connections: proxyStatusManager.getStatistics().activeConnections,
     }
@@ -224,6 +235,13 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
     }
     const store = storeManager.getStore()
     store?.set(key as 'providers' | 'accounts' | 'config' | 'logs', value as never)
+    if (key === 'config') {
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed()) {
+          win.webContents.send(IpcChannels.CONFIG_CHANGED, value)
+        }
+      })
+    }
   })
 
   ipcMain.handle(IpcChannels.STORE_DELETE, async (_, key: string): Promise<void> => {
@@ -779,46 +797,13 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
 
   ipcMain.handle(IpcChannels.APP_CHECK_UPDATE, async () => {
     try {
-      const response = await axios.get('https://api.github.com/repos/xiaoY233/Chat2API/releases/latest', {
-        headers: {
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'Chat2API-Manager',
-        },
-        timeout: 10000,
-      })
-      const data = response.data
-      const latestVersion = data.tag_name?.replace(/^v/, '') || ''
-      const releaseUrl = data.html_url || 'https://github.com/xiaoY233/Chat2API/releases'
-      const currentVersion = app.getVersion()
-
-      // Simple semver comparison
-      const compareVersions = (v1: string, v2: string): number => {
-        const parts1 = v1.split('.').map(Number)
-        const parts2 = v2.split('.').map(Number)
-        const maxLength = Math.max(parts1.length, parts2.length)
-        for (let i = 0; i < maxLength; i++) {
-          const p1 = parts1[i] || 0
-          const p2 = parts2[i] || 0
-          if (p1 > p2) return 1
-          if (p1 < p2) return -1
-        }
-        return 0
-      }
-
-      const hasUpdate = latestVersion && compareVersions(latestVersion, currentVersion) > 0
-
-      return {
-        hasUpdate,
-        currentVersion,
-        latestVersion,
-        releaseUrl,
-      }
+      await updaterManager.checkForUpdates()
+      return updaterManager.getStatus()
     } catch (error) {
       console.error('[App] Check update error:', error)
       return {
-        hasUpdate: false,
-        currentVersion: app.getVersion(),
-        latestVersion: app.getVersion(),
+        ...updaterManager.getStatus(),
+        checking: false,
         error: error instanceof Error ? error.message : String(error),
       }
     }
@@ -1030,9 +1015,13 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
 export function getProxyStatus(): ProxyStatus {
   const isRunning = proxyServer !== null
   const port = proxyStatusManager.getPort()
+  const host = isRunning
+    ? proxyStatusManager.getHost()
+    : storeManager.getConfig().proxyHost || proxyStatusManager.getHost()
   return {
     isRunning,
     port,
+    host,
     uptime: proxyStartTime && isRunning ? Date.now() - proxyStartTime : 0,
     connections: proxyStatusManager.getStatistics().activeConnections,
   }

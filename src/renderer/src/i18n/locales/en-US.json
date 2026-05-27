@@ -193,7 +193,7 @@
     "clearChatsWarning": "This will delete all conversation history on this provider's website and cannot be undone.",
     "clearChatsSuccess": "Chat history cleared successfully",
     "clearChatsFailed": "Failed to clear chat history",
-    "clearChatsOnlyForQwenAI": "This feature is only available for Qwen AI, MiniMax, Z.ai, Perplexity, DeepSeek, GLM, and Mimo providers",
+    "clearChatsOnlyForQwenAI": "This feature is only available for Kimi, Qwen, Qwen AI, MiniMax, Z.ai, Perplexity, DeepSeek, GLM, and Mimo providers",
     "saving": "Saving...",
     "saveChanges": "Save Changes",
     "required": "Required",
@@ -249,7 +249,7 @@
   },
   "glm": {
     "name": "GLM",
-    "description": "Zhipu Qingyan AI Assistant, supports GLM-5 flagship model, deep thinking and web search",
+    "description": "Zhipu Qingyan AI Assistant, supports GLM-5.1 flagship model, deep thinking and web search",
     "refreshToken": "Refresh Token",
     "refreshTokenPlaceholder": "Enter chatglm_refresh_token",
     "refreshTokenHelp": "Get chatglm_refresh_token from Zhipu Qingyan web version, found in browser DevTools Application -> Cookie"
@@ -293,11 +293,12 @@
     "codeMode": "Code Mode",
     "codeModeDesc": "Use Qwen-Coder model, specialized for programming tasks",
     "models": {
-      "qwen3-235b-a22b": "Qwen3-235B-A22B (Deep Thinking)",
-      "qwen3-coder-plus": "Qwen3-Coder (Code Mode)",
-      "qwen3-30b-a3b": "Qwen3-30B-A3B",
-      "qwen-max-latest": "Qwen2.5-Max",
-      "Qwen3.5-Plus": "Qwen3.5-Plus"
+      "Qwen3.6": "Qwen",
+      "Qwen3.7-Max": "Qwen3.7-Max",
+      "Qwen3.5-Flash": "Qwen3.5-Flash",
+      "Qwen3-Max": "Qwen3-Max",
+      "Qwen3-Max-Thinking-Preview": "Qwen3-Max-Thinking-Preview",
+      "Qwen3-Coder": "Qwen3-Coder"
     }
   },
   "qwen-ai": {
@@ -314,7 +315,7 @@
   },
   "zai": {
     "name": "Z.ai",
-    "description": "Z.ai - Free AI Chatbot powered by GLM-5 and GLM-4.7",
+    "description": "Z.ai - Free AI Chatbot powered by GLM-5.1, GLM-5, and GLM-4.7",
     "token": "Access Token",
     "tokenPlaceholder": "Enter Z.ai JWT Token",
     "tokenHelp": "Get token from Z.ai web version, found in browser DevTools Application -> Cookie, starts with \"eyJ...\""

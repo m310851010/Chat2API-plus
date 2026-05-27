@@ -129,6 +129,7 @@ export interface LogEntry {
 export interface ProxyStatus {
   isRunning: boolean
   port: number
+  host: string
   uptime: number
   connections: number
 }

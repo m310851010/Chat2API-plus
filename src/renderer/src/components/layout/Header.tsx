@@ -13,6 +13,7 @@ export function Header() {
   const [proxyEnabled, setProxyEnabled] = useState(false)
   const [proxyLoading, setProxyLoading] = useState(false)
   const [port, setPort] = useState(8080)
+  const [host, setHost] = useState('127.0.0.1')
 
   useEffect(() => {
     if (!window.electronAPI?.proxy?.onStatusChanged) return
@@ -20,14 +21,30 @@ export function Header() {
     const unsubscribe = window.electronAPI.proxy.onStatusChanged((status) => {
       setProxyEnabled(status.isRunning)
       if (status.port) setPort(status.port)
+      setHost(status.host || '127.0.0.1')
     })
     
     window.electronAPI.proxy.getStatus().then((status) => {
       setProxyEnabled(status.isRunning)
       if (status.port) setPort(status.port)
+      setHost(status.host || '127.0.0.1')
+    })
+
+    window.electronAPI.config?.get?.().then((config) => {
+      if (!config) return
+      setPort(config.proxyPort || 8080)
+      setHost(config.proxyHost || '127.0.0.1')
+    })
+
+    const unsubscribeConfig = window.electronAPI.config?.onConfigChanged?.((config) => {
+      setPort(config.proxyPort || 8080)
+      setHost(config.proxyHost || '127.0.0.1')
     })
     
-    return unsubscribe
+    return () => {
+      unsubscribe()
+      unsubscribeConfig?.()
+    }
   }, [])
 
   const handleToggleProxy = async () => {
@@ -116,7 +133,7 @@ export function Header() {
                   : "text-[var(--text-muted)]"
               )}
             >
-              127.0.0.1:{port}
+              {host}:{port}
             </span>
             <button
               onClick={handleToggleProxy}
