@@ -72,6 +72,7 @@ test('P0 metadata exposes only approved clients and providers', () => {
   ])
 
   assert.deepEqual(P0_TOOL_PROVIDER_SUPPORT.map((provider) => provider.providerId), [
+    'chatgpt',
     'deepseek',
     'kimi',
     'glm',
@@ -80,6 +81,7 @@ test('P0 metadata exposes only approved clients and providers', () => {
   ])
 
   assert.deepEqual(P0_TOOL_PROVIDER_SUPPORT.map((provider) => provider.label), [
+    'CHATGPT',
     'DEEPSEEK',
     'KIMI',
     'GLM',

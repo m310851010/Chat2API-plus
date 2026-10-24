@@ -163,9 +163,17 @@ router.post('/completions', async (ctx: Context) => {
     return
   }
 
-  const { account, provider, actualModel } = selection
+  // Account failover: switch to the next available account and retry after a failed attempt
+  const failoverEnabled = config.accountFailoverRetry === true
+  const MAX_FAILOVER_ATTEMPTS = 3
+  const triedAccountIds = new Set<string>()
 
-  const context: ProxyContext = {
+  let account = selection.account
+  let provider = selection.provider
+  let actualModel = selection.actualModel
+  triedAccountIds.add(account.id)
+
+  let context: ProxyContext = {
     requestId,
     providerId: provider.id,
     accountId: account.id,
@@ -179,13 +187,64 @@ router.post('/completions', async (ctx: Context) => {
   proxyStatusManager.recordRequestStart(request.model, provider.id, account.id)
 
   try {
-    const result = await requestForwarder.forwardChatCompletion(
+    let result = await requestForwarder.forwardChatCompletion(
       request,
       account,
       provider,
       actualModel,
       context
     )
+
+    // Retry with the next candidate account when the current account fails
+    while (!result.success && failoverEnabled && triedAccountIds.size < MAX_FAILOVER_ATTEMPTS) {
+      const nextSelection = loadBalancer.selectAccount(
+        request.model,
+        config.loadBalanceStrategy,
+        preferredProviderId,
+        preferredAccountId,
+        [...triedAccountIds]
+      )
+
+      if (!nextSelection) {
+        break
+      }
+
+      loadBalancer.markAccountFailed(account.id)
+
+      console.warn(
+        `[Chat] Account failover: "${account.name}" failed (${result.error}), retrying with "${nextSelection.account.name}"`
+      )
+      storeManager.addLog('warn', `Account failover: switched from "${account.name}" to "${nextSelection.account.name}" after failure: ${result.error}`, {
+        requestId,
+        providerId: provider.id,
+        accountId: account.id,
+        model: request.model,
+      })
+
+      account = nextSelection.account
+      provider = nextSelection.provider
+      actualModel = nextSelection.actualModel
+      triedAccountIds.add(account.id)
+
+      context = {
+        requestId,
+        providerId: provider.id,
+        accountId: account.id,
+        model: request.model,
+        actualModel,
+        startTime,
+        isStream: request.stream || false,
+        clientIP,
+      }
+
+      result = await requestForwarder.forwardChatCompletion(
+        request,
+        account,
+        provider,
+        actualModel,
+        context
+      )
+    }
 
     const latency = Date.now() - startTime
 

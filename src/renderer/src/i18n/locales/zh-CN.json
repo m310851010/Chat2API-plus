@@ -4,11 +4,12 @@
     "switchToChinese": "切换到中文"
   },
   "app": {
-    "name": "Chat2API",
+    "name": "Chat2API Plus",
     "description": "AI API 代理管理系统"
   },
   "nav": {
     "dashboard": "仪表盘",
+    "chat": "对话",
     "providers": "供应商",
     "proxy": "代理设置",
     "models": "模型管理",
@@ -17,6 +18,42 @@
     "session": "会话管理",
     "settings": "设置",
     "about": "关于"
+  },
+  "chat": {
+    "newChat": "新建对话",
+    "history": "历史记录",
+    "noHistory": "暂无历史记录",
+    "untitled": "新对话",
+    "deleteConversation": "删除对话",
+    "deleteConfirm": "确定要删除这个对话吗？",
+    "renameConversation": "重命名会话",
+    "copyTitle": "复制会话标题",
+    "forkConversation": "分叉会话",
+    "exportMarkdown": "导出 Markdown 文件",
+    "groupToday": "今天",
+    "groupYesterday": "昨天",
+    "groupLast7": "最近 7 天",
+    "groupLast30": "最近 30 天",
+    "groupEarlier": "更早",
+    "selectModel": "选择模型",
+    "noModels": "暂无可用模型\n请先在模型管理中添加供应商和模型",
+    "generating": "生成中…",
+    "thinking": "思考过程",
+    "copied": "已复制",
+    "copy": "复制",
+    "you": "你",
+    "assistant": "AI",
+    "emptyResponse": "未收到回复内容",
+    "emptyChat": "开始你的第一次对话",
+    "emptyChatDesc": "选择模型，输入内容，按 Enter 发送",
+    "inputPlaceholder": "输入消息…（Enter 发送，Shift+Enter 换行）",
+    "inputHint": "对话记录仅保存在本地",
+    "send": "发送",
+    "stop": "停止",
+    "proxyRunning": "代理运行中",
+    "proxyNotRunning": "代理未运行",
+    "scrollToBottom": "回到底部",
+    "searchModels": "搜索模型…"
   },
   "dashboard": {
     "title": "仪表盘",
@@ -236,6 +273,21 @@
     "pasteFailed": "粘贴失败",
     "pasteFailedDesc": "请手动粘贴"
   },
+  "chatgpt": {
+    "name": "ChatGPT",
+    "description": "ChatGPT 网页版代理，通过 Access Token 接入，支持深度思考与联网搜索",
+    "accessToken": "Access Token",
+    "tokenPlaceholder": "请输入 ChatGPT Access Token",
+    "tokenHelp": "在浏览器中打开 https://chatgpt.com/api/auth/session 并登录，复制返回 JSON 中的 accessToken 字段值",
+    "models": {
+      "Auto": "自动（平台自动选择模型）",
+      "GPT-5": "GPT-5",
+      "GPT-5-2": "GPT-5.2",
+      "GPT-5-3": "GPT-5.3",
+      "GPT-5-3-Mini": "GPT-5.3 Mini",
+      "GPT-5-Mini": "GPT-5 Mini"
+    }
+  },
   "deepseek": {
     "name": "DeepSeek",
     "description": "DeepSeek 智能对话助手，支持深度思考和联网搜索",
@@ -341,6 +393,20 @@
     "sessionTokenHelp": "请从浏览器开发者工具获取 __Secure-next-auth.session-token Cookie，或切换到 OAuth 登录标签页自动获取",
     "freeUserNotice": "官方免费用户仅限 Auto 模型，系统自动分配模型响应"
   },
+  "gemini": {
+    "name": "Gemini",
+    "description": "Google Gemini 接口（Flash / Thinking / Pro 模型）",
+    "cookie": "Cookie",
+    "cookiePlaceholder": "请输入完整的 Gemini Cookie 字符串",
+    "cookieHelp": "打开 https://gemini.google.com 并登录，然后在浏览器开发者工具（Application > Cookies > https://gemini.google.com）复制完整 Cookie 字符串"
+  },
+  "grok": {
+    "name": "Grok",
+    "description": "xAI Grok 接口（grok-4 / grok-4-fast / grok-3）",
+    "cookie": "Cookie",
+    "cookiePlaceholder": "请输入完整的 grok.com Cookie 字符串",
+    "cookieHelp": "打开 https://grok.com 并登录，然后在浏览器开发者工具（Application > Cookies > https://grok.com）复制完整 Cookie 字符串"
+  },
   "proxy": {
     "title": "代理设置",
     "description": "配置 API 代理服务参数和管理策略",
@@ -445,6 +511,8 @@
     "roundRobinDesc": "按顺序依次使用每个可用账户，实现均匀分配请求",
     "fillFirstDesc": "优先使用当前账户直到达到限制，然后切换到下一个账户",
     "failoverDesc": "自动跳过异常账户，当账户连续失败3次后自动切换到其他账户，1分钟后自动恢复",
+    "accountFailoverRetry": "账号轮询",
+    "accountFailoverRetryDesc": "请求失败（如模型不可用、Token 失效）时自动切换到下一个可用账号重试，最多尝试 3 个账号",
     "accountWeightConfig": "账户权重配置",
     "weightHelp": "权重越高，该账户被选中的概率越大。仅在轮询策略下生效。",
     "noActiveAccounts": "暂无活跃账户",
@@ -672,6 +740,9 @@
     "oauthProxyModeHelp": "设置 OAuth 登录时的网络代理模式",
     "oauthProxySystem": "系统代理",
     "oauthProxyNone": "不使用代理",
+    "apiProxyUrl": "API 出站代理",
+    "apiProxyUrlHelp": "供应商 API 请求使用的代理地址，可绕过部分风控。支持 http/https/socks5，留空直连",
+    "apiProxyUrlPlaceholder": "http://host:port 或 socks5://user:pass@host:port",
     "logSettings": "日志设置",
     "logLevel": "日志级别",
     "logLevelHelp": "选择日志记录级别",
@@ -722,7 +793,7 @@
     "resetFailed": "应用重置失败",
     "about": "关于",
     "aboutDesc": "应用程序信息和版本",
-    "appName": "Chat2API",
+    "appName": "Chat2API Plus",
     "appDesc": "多平台 AI 服务统一管理工具",
     "appVersion": "应用版本",
     "currentVersion": "当前版本",
@@ -891,6 +962,7 @@
     "warningTitle": "重要提示",
     "warningMessage": "实际调用模型ID需自行在供应商官方页面获取，填写错误将导致对话失败。建议先在官方页面确认模型ID后再添加。",
     "addDialogTitle": "添加自定义模型",
+    "editDialogTitle": "编辑模型",
     "displayNameLabel": "模型显示名称",
     "displayNamePlaceholder": "例如: My-Custom-Model",
     "displayNameHelp": "AI客户端调用时使用的模型名称",
@@ -903,6 +975,8 @@
     "nameExists": "模型显示名称已存在",
     "addSuccess": "模型添加成功",
     "addError": "模型添加失败",
+    "editSuccess": "模型修改成功",
+    "editError": "模型修改失败",
     "removeSuccess": "模型删除成功",
     "removeError": "模型删除失败",
     "resetSuccess": "已恢复默认模型",
@@ -931,9 +1005,9 @@
     "protocolFormatTooltip": "仅用于排查未纳入 provider profile 的自定义供应商。内置重点 provider 使用后端 profile 管理工具调用协议。",
     "bracketFormat": "Bracket 诊断格式",
     "bracketFormatDesc": "仅用于旧输出排查，不作为重点 provider 的工具调用方案",
-    "xmlFormat": "Chat2API XML",
+    "xmlFormat": "Chat2API Plus XML",
     "xmlFormatDesc": "默认托管工具调用输出协议",
-    "providerProfileNotice": "DeepSeek、Kimi、GLM、Qwen 使用后端 provider profile 管理工具调用；当前重点 provider 统一使用 Chat2API XML。",
+    "providerProfileNotice": "DeepSeek、Kimi、GLM、Qwen 使用后端 provider profile 管理工具调用；当前重点 provider 统一使用 Chat2API Plus XML。",
     "injectionConfig": "注入配置",
     "configDescription": "控制工具提示词的注入策略",
     "injectionMode": "注入模式",
@@ -1018,12 +1092,15 @@
     "supported": "支持",
     "smoke": {
       "title": "冒烟测试",
-      "description": "通过本地管理 API 生成最小天气工具调用测试用例。",
+      "description": "在应用内直接生成最小天气工具调用测试用例。",
       "run": "运行测试",
       "not_run": "未运行",
       "running": "运行中",
       "pass": "通过",
-      "failed": "失败"
+      "failed": "失败",
+      "errorLogTitle": "失败日志",
+      "unknownError": "未知错误",
+      "dismissError": "关闭"
     },
     "advanced": {
       "title": "高级诊断",

@@ -5,6 +5,7 @@ import { createTrayManager, TrayManager } from './tray/TrayManager'
 import { registerIpcHandlers } from './ipc/handlers'
 import { UpdaterManager } from './updater'
 import { storeManager } from './store/store'
+import { startModelRefreshService, scheduleInitialModelRefresh, stopModelRefreshService } from './providers/modelRefreshService'
 
 // Prevent uncaught exceptions from crashing the app
 process.on('uncaughtException', (error) => {
@@ -91,7 +92,7 @@ async function setupApp(): Promise<void> {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    title: 'Chat2API',
+    title: 'Chat2API Plus',
     show: false,
   })
 
@@ -100,6 +101,11 @@ async function setupApp(): Promise<void> {
   trayManager = createTrayManager(mainWindow)
 
   await loadAppContent(mainWindow)
+
+  // Background dynamic model refresh: fetch upstream model lists shortly after
+  // startup, then every 30 minutes
+  startModelRefreshService()
+  scheduleInitialModelRefresh()
 
   if (process.env.NODE_ENV === 'development') {
     openDevTools()
@@ -126,6 +132,7 @@ async function loadAppContent(mainWindow: BrowserWindow): Promise<void> {
 
 function cleanup(): void {
   console.log('Application is exiting, performing cleanup...')
+  stopModelRefreshService()
   storeManager.flushPendingWrites()
   const updaterManager = UpdaterManager.getInstance()
   updaterManager.destroy()

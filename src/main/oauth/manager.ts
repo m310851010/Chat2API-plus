@@ -413,6 +413,34 @@ export class OAuthManager extends EventEmitter {
           }
         }
 
+        // For Gemini, we need __Secure-1PSID and SAPISID before validating
+        if (providerType === 'gemini') {
+          const hasPsid = collectedTokens['__Secure-1PSID'] || collectedTokens.psids || collectedTokens.cookie
+          const hasSapisid = collectedTokens['SAPISID']
+
+          if (!hasPsid) {
+            console.log('[OAuthManager] Gemini: Waiting for __Secure-1PSID cookie...')
+            return
+          }
+
+          if (event.key === '__Secure-1PSID' && !hasSapisid && !isValidating) {
+            console.log('[OAuthManager] Gemini: Got __Secure-1PSID, waiting for SAPISID...')
+
+            if (validationTimeout) {
+              clearTimeout(validationTimeout)
+            }
+
+            // Give SAPISID a short window to be collected, then proceed anyway
+            validationTimeout = setTimeout(() => {
+              if (!isValidating) {
+                console.log('[OAuthManager] Gemini: Proceeding with validation (collected tokens):', Object.keys(collectedTokens))
+                validateAndComplete()
+              }
+            }, 800)
+            return
+          }
+        }
+
         // For non-MiniMax/Mimo providers, validate immediately when we have a token
         if (providerType !== 'minimax' && providerType !== 'mimo') {
           if (isValidating) {

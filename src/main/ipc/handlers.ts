@@ -1,4 +1,5 @@
-import { ipcMain, app, BrowserWindow, shell } from 'electron'
+import { ipcMain, app, BrowserWindow, shell, dialog } from 'electron'
+import fs from 'fs'
 import axios from 'axios'
 import { IpcChannels } from './channels'
 import { storeManager } from '../store/store'
@@ -14,7 +15,9 @@ import { sessionManager } from '../proxy/sessionManager'
 import { TrayManager } from '../tray/TrayManager'
 import { ConfigManager } from '../store/config'
 import { generateManagementSecret } from '../proxy/middleware/managementAuth'
+import { buildSmokeFixture, setLatestToolCallingSmokeResult } from '../proxy/toolCalling/diagnostics'
 import { UpdaterManager } from '../updater'
+import { ChatGPTAdapter } from '../proxy/adapters/chatgpt'
 import { DeepSeekAdapter } from '../proxy/adapters/deepseek'
 import { GLMAdapter } from '../proxy/adapters/glm'
 import { KimiAdapter } from '../proxy/adapters/kimi'
@@ -355,6 +358,7 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
         ProviderManager.update(providerId, {
           supportedModels: result.supportedModels,
           modelMappings: result.modelMappings,
+          modelsFetchedAt: Date.now(),
         })
       }
 
@@ -378,11 +382,50 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
   }> => {
     try {
       const provider = ProviderManager.getById(providerId)
-      
+
       if (!provider) {
         return {
           success: false,
           error: 'Provider not found',
+        }
+      }
+
+      // ChatGPT web API requires full browser impersonation; use its dedicated adapter
+      // (mirrors chatgpt2api: GET /backend-api/models?history_and_training_disabled=false)
+      if (providerId === 'chatgpt' || ChatGPTAdapter.isChatGPTProvider(provider)) {
+        const accounts = AccountManager.getByProviderId(providerId, true)
+        const activeAccount = accounts.find(a => a.status === 'active')
+        if (!activeAccount) {
+          return {
+            success: false,
+            error: 'No active ChatGPT account, please add an account first',
+          }
+        }
+
+        const adapter = new ChatGPTAdapter(provider, activeAccount)
+        const slugs = await adapter.listModels()
+
+        if (slugs.length === 0) {
+          return {
+            success: false,
+            error: 'No models found in the response',
+          }
+        }
+
+        const modelMappings: Record<string, string> = {}
+        slugs.forEach(slug => {
+          modelMappings[slug] = slug
+        })
+
+        ProviderManager.update(providerId, {
+          supportedModels: slugs,
+          modelMappings,
+          modelsFetchedAt: Date.now(),
+        })
+
+        return {
+          success: true,
+          modelsCount: slugs.length,
         }
       }
 
@@ -434,7 +477,9 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
         }
       }
 
-      const models = response.data.data || response.data
+      const models = response.data?.data
+        || response.data?.models
+        || response.data
 
       if (!Array.isArray(models) || models.length === 0) {
         return {
@@ -451,8 +496,8 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
           supportedModels.push(model)
           modelMappings[model] = model
         } else if (model && typeof model === 'object') {
-          const modelId = model.id || model.model_id || model.name
-          const modelName = model.name || model.display_name || modelId
+          const modelId = model.id || model.model_id || model.slug || model.name
+          const modelName = model.name || model.display_name || model.title || modelId
           
           if (modelId) {
             supportedModels.push(modelName || modelId)
@@ -506,6 +551,22 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to add custom model',
+        models: [],
+      }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.PROVIDERS_UPDATE_MODEL, async (_, providerId: string, originalName: string, model: { displayName: string; actualModelId: string }) => {
+    try {
+      return {
+        success: true,
+        models: storeManager.updateModel(providerId, originalName, model),
+      }
+    } catch (error) {
+      console.error('[IPC] Failed to update model:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to update model',
         models: [],
       }
     }
@@ -863,6 +924,30 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
     }
   })
 
+  ipcMain.handle(
+    IpcChannels.APP_SAVE_TEXT_FILE,
+    async (_, payload: { fileName: string; content: string }): Promise<string | null> => {
+      const fileName = typeof payload?.fileName === 'string' ? payload.fileName : ''
+      const content = typeof payload?.content === 'string' ? payload.content : ''
+      if (!fileName) {
+        throw new Error('fileName is required')
+      }
+
+      const parent = BrowserWindow.getAllWindows()[0] ?? undefined
+      const result = await dialog.showSaveDialog(parent as BrowserWindow, {
+        title: fileName,
+        defaultPath: fileName,
+      })
+
+      if (result.canceled || !result.filePath) {
+        return null
+      }
+
+      await fs.promises.writeFile(result.filePath, content, 'utf-8')
+      return result.filePath
+    }
+  )
+
   // ==================== System Prompts Handlers ====================
 
   ipcMain.handle(IpcChannels.PROMPTS_GET_ALL, async (): Promise<SystemPrompt[]> => {
@@ -964,6 +1049,37 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
     ConfigManager.update({ managementApi: newManagementConfig })
     
     return newSecret
+  })
+
+  // ==================== Tool Calling Handlers ====================
+
+  ipcMain.handle(IpcChannels.TOOL_CALLING_RUN_SMOKE, async (_, input: { clientAdapterId?: string }) => {
+    try {
+      const config = ConfigManager.get()
+      const clientAdapterId = input?.clientAdapterId ?? config.toolCallingConfig.clientAdapterId
+      const fixture = buildSmokeFixture(clientAdapterId)
+
+      const result = setLatestToolCallingSmokeResult({
+        success: true,
+        category: 'pass',
+        message: 'Smoke fixture generated. Send it through /v1/chat/completions with a mapped model to run a live provider smoke.',
+        clientAdapterId,
+        timestamp: Date.now(),
+      })
+
+      return {
+        success: true,
+        data: { result, fixture },
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          code: 'smoke_test_failed',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      }
+    }
   })
 
   // ==================== Context Management Handlers ====================

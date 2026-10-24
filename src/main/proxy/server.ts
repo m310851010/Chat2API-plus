@@ -7,11 +7,26 @@ import Koa, { type Context, type Next } from 'koa'
 import Router from '@koa/router'
 import bodyParser from 'koa-bodyparser'
 import { Server as HttpServer } from 'http'
+import { BrowserWindow } from 'electron'
 import routes from './routes'
 import managementRoutes from './routes/management'
 import { proxyStatusManager } from './status'
 import { storeManager } from '../store/store'
 import { sessionManager } from './sessionManager'
+import { IpcChannels } from '../ipc/channels'
+
+/**
+ * Broadcast proxy status to all renderer windows (covers non-IPC stop paths
+ * such as the management API so that the chat page stays in sync)
+ */
+function broadcastProxyStatus(isRunning: boolean): void {
+  const status = proxyStatusManager.getRunningStatus()
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(IpcChannels.PROXY_STATUS_CHANGED, { ...status, isRunning })
+    }
+  }
+}
 
 const SLOW_REQUEST_THRESHOLD_MS = 1500
 
@@ -162,7 +177,7 @@ export class ProxyServer {
 
     this.router.get('/', async (ctx) => {
       ctx.body = {
-        name: 'Chat2API Proxy',
+        name: 'Chat2API Plus Proxy',
         version: '1.1.2',
         description: 'OpenAI API compatible proxy service',
         endpoints: [
@@ -292,6 +307,7 @@ export class ProxyServer {
 
           storeManager.addLog('info', `Proxy server started successfully, listening on ${this.host}:${this.port}`)
 
+          broadcastProxyStatus(true)
           resolve(true)
         })
 
@@ -302,6 +318,7 @@ export class ProxyServer {
             storeManager.addLog('error', `Server error: ${err.message}`)
           }
           this.server = null
+          broadcastProxyStatus(false)
           resolve(false)
         })
 
@@ -338,6 +355,7 @@ export class ProxyServer {
 
         storeManager.addLog('info', 'Proxy server stopped')
 
+        broadcastProxyStatus(false)
         resolve(true)
       })
     })

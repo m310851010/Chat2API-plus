@@ -19,6 +19,8 @@ interface SettingsState {
   setProxyEnabled: (enabled: boolean) => void
   oauthProxyMode: OAuthProxyMode
   setOauthProxyMode: (mode: OAuthProxyMode) => void
+  apiProxyUrl: string
+  setApiProxyUrl: (url: string) => void
   language: Language
   setLanguage: (language: Language) => void
   autoStart: boolean
@@ -58,12 +60,23 @@ export const useSettingsStore = create<SettingsState>()(
       proxyEnabled: false,
       setProxyEnabled: (enabled) => set({ proxyEnabled: enabled }),
       oauthProxyMode: 'system',
-      setOauthProxyMode: async (mode) => {
+      setOauthProxyMode: (mode) => {
         set({ oauthProxyMode: mode })
         try {
-          await window.electronAPI.config.update({ oauthProxyMode: mode })
+          window.electronAPI.config.update({ oauthProxyMode: mode })
         } catch (error) {
           console.error('Failed to update oauthProxyMode:', error)
+        }
+      },
+      apiProxyUrl: '',
+      setApiProxyUrl: (url) => {
+        const prev = get().apiProxyUrl
+        set({ apiProxyUrl: url })
+        try {
+          window.electronAPI.config.update({ apiProxyUrl: url })
+        } catch (error) {
+          console.error('Failed to update apiProxyUrl:', error)
+          set({ apiProxyUrl: prev })
         }
       },
       language: 'en-US',
@@ -143,6 +156,7 @@ export const useSettingsStore = create<SettingsState>()(
             autoStart: config.autoStart,
             autoStartProxy: config.autoStartProxy,
             oauthProxyMode: config.oauthProxyMode || 'system',
+            apiProxyUrl: config.apiProxyUrl || '',
             language: config.language || 'en-US',
           })
         } catch (error) {

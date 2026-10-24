@@ -10,9 +10,15 @@ import { Account, Provider } from '../store/types'
 import { ForwardResult, ChatCompletionRequest, ProxyContext } from './types'
 import { proxyStatusManager } from './status'
 import { storeManager } from '../store/store'
+import { ChatGPTAdapter } from './adapters/chatgpt'
+import { ChatGPTStreamHandler } from './adapters/chatgpt-stream'
 import { DeepSeekAdapter } from './adapters/deepseek'
 import { DeepSeekStreamHandler } from './adapters/deepseek-stream'
+import { GeminiAdapter } from './adapters/gemini'
+import { GeminiStreamHandler } from './adapters/gemini-stream'
 import { GLMAdapter, GLMStreamHandler } from './adapters/glm'
+import { GrokAdapter } from './adapters/grok'
+import { GrokStreamHandler } from './adapters/grok-stream'
 import { KimiAdapter, KimiStreamHandler } from './adapters/kimi'
 import { MimoAdapter, MimoStreamHandler } from './adapters/mimo'
 import { QwenAdapter, QwenStreamHandler } from './adapters/qwen'
@@ -58,10 +64,28 @@ export class RequestForwarder {
 
   private readonly providerForwarders: ProviderForwarder[] = [
     {
+      name: 'chatgpt',
+      matches: ChatGPTAdapter.isChatGPTProvider,
+      forward: (request, account, provider, actualModel, startTime) =>
+        this.forwardChatGPT(request, account, provider, actualModel, startTime),
+    },
+    {
       name: 'deepseek',
       matches: DeepSeekAdapter.isDeepSeekProvider,
       forward: (request, account, provider, actualModel, startTime) =>
         this.forwardDeepSeek(request, account, provider, actualModel, startTime),
+    },
+    {
+      name: 'gemini',
+      matches: GeminiAdapter.isGeminiProvider,
+      forward: (request, account, provider, actualModel, startTime) =>
+        this.forwardGemini(request, account, provider, actualModel, startTime),
+    },
+    {
+      name: 'grok',
+      matches: GrokAdapter.isGrokProvider,
+      forward: (request, account, provider, actualModel, startTime) =>
+        this.forwardGrok(request, account, provider, actualModel, startTime),
     },
     {
       name: 'glm',
@@ -387,6 +411,117 @@ export class RequestForwarder {
         }
       }
 
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        latency,
+      }
+    }
+  }
+
+  /**
+   * ChatGPT Dedicated Forward
+   */
+  private async forwardChatGPT(
+    request: ChatCompletionRequest,
+    account: Account,
+    provider: Provider,
+    actualModel: string,
+    startTime: number
+  ): Promise<ForwardResult> {
+    try {
+      const transformed = this.transformRequestForPromptToolUse(request, provider)
+      const transformedRequest = {
+        ...request,
+        messages: transformed.messages,
+        tools: transformed.tools,
+      }
+
+      const adapter = new ChatGPTAdapter(provider, account)
+
+      const { response, sessionId } = await adapter.chatCompletion({
+        model: request.model,
+        messages: transformedRequest.messages as any,
+        stream: transformedRequest.stream,
+        temperature: transformedRequest.temperature,
+        reasoning_effort: transformedRequest.reasoning_effort,
+      })
+
+      const latency = Date.now() - startTime
+
+      if (response.status >= 400) {
+        let errorMessage = `HTTP ${response.status}`
+        if (response.data) {
+          if (typeof response.data === 'string') {
+            errorMessage = response.data
+          } else if (response.data.detail) {
+            errorMessage = typeof response.data.detail === 'string'
+              ? response.data.detail
+              : response.data.detail.message || JSON.stringify(response.data.detail)
+          } else if (response.data.error?.message) {
+            errorMessage = response.data.error.message
+          }
+        }
+        return {
+          success: false,
+          status: response.status,
+          error: errorMessage,
+          latency,
+        }
+      }
+
+      // Prepare callback for deleting session (ChatGPT sessions are stateless, no-op)
+      const deleteSessionCallback = shouldDeleteSession()
+        ? async () => {
+            try {
+              await adapter.deleteSession(sessionId)
+            } catch (error) {
+              console.error('[ChatGPT] Failed to delete session:', error)
+            }
+          }
+        : undefined
+
+      // ChatGPT always returns streaming response
+      const handler = new ChatGPTStreamHandler(
+        actualModel,
+        sessionId,
+        deleteSessionCallback,
+        transformed.plan
+      )
+
+      if (request.stream) {
+        const transformedStream = await handler.handleStream(response.data)
+
+        return {
+          success: true,
+          status: response.status,
+          headers: this.extractHeaders(response.headers),
+          stream: transformedStream,
+          skipTransform: true,
+          latency,
+          providerSessionId: sessionId,
+        }
+      }
+
+      // Non-streaming requests need to collect stream data and convert
+      const result = await handler.handleNonStream(response.data)
+
+      this.applyToolCallsToResponse(result, transformed)
+
+      if (deleteSessionCallback) {
+        await deleteSessionCallback()
+      }
+
+      return {
+        success: true,
+        status: response.status,
+        headers: this.extractHeaders(response.headers),
+        body: result,
+        latency,
+        providerSessionId: sessionId,
+      }
+    } catch (error) {
+      const latency = Date.now() - startTime
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -841,7 +976,7 @@ export class RequestForwarder {
         }
       }
 
-      const handler = new QwenAiStreamHandler(actualModel)
+      const handler = new QwenAiStreamHandler(actualModel, undefined, transformed.plan)
       handler.setChatId(chatId)
 
       if (request.stream) {
@@ -942,7 +1077,7 @@ export class RequestForwarder {
           }
         : undefined
 
-      const handler = new ZaiStreamHandler(actualModel, deleteChatCallback)
+      const handler = new ZaiStreamHandler(actualModel, deleteChatCallback, transformed.plan)
       handler.setChatId(chatId)
       
       if (request.stream === true) {
@@ -1286,6 +1421,160 @@ export class RequestForwarder {
   }
 
   /**
+   * Gemini Web Dedicated Forward
+   * Gemini web has no native function calling; tool calling goes through
+   * prompt injection (managed XML protocol) + response parsing.
+   */
+  private async forwardGemini(
+    request: ChatCompletionRequest,
+    account: Account,
+    provider: Provider,
+    actualModel: string,
+    startTime: number
+  ): Promise<ForwardResult> {
+    try {
+      const transformed = this.transformRequestForPromptToolUse(request, provider)
+
+      const adapter = new GeminiAdapter(provider, account)
+
+      const { stream, sessionId } = await adapter.chatCompletion({
+        model: request.model,
+        messages: transformed.messages as any,
+        stream: request.stream,
+        temperature: request.temperature,
+      }, { temporaryChats: shouldDeleteSession() })
+
+      const latency = Date.now() - startTime
+      const deleteSessionCallback = shouldDeleteSession()
+        ? async () => {
+            try {
+              await adapter.deleteSession(sessionId)
+            } catch (error) {
+              console.error('[Gemini] Failed to delete session:', error)
+            }
+          }
+        : undefined
+
+      if (request.stream === true) {
+        const handler = new GeminiStreamHandler(actualModel, sessionId, deleteSessionCallback, transformed.plan)
+        const transformedStream = await handler.handleStream(stream)
+
+        return {
+          success: true,
+          status: 200,
+          headers: {},
+          stream: transformedStream as any,
+          skipTransform: true,
+          latency,
+          providerSessionId: sessionId,
+        }
+      }
+
+      const handler = new GeminiStreamHandler(actualModel, sessionId, undefined, transformed.plan)
+      const result = await handler.handleNonStream(stream)
+
+      this.applyToolCallsToResponse(result, transformed)
+
+      if (deleteSessionCallback) {
+        await deleteSessionCallback()
+      }
+
+      return {
+        success: true,
+        status: 200,
+        headers: {},
+        body: result,
+        latency,
+        providerSessionId: sessionId,
+      }
+    } catch (error) {
+      const latency = Date.now() - startTime
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        latency,
+      }
+    }
+  }
+
+  /**
+   * Grok Web Dedicated Forward
+   * Grok web has no native function calling exposed; tool calling goes through
+   * prompt injection (managed XML protocol) + response parsing.
+   */
+  private async forwardGrok(
+    request: ChatCompletionRequest,
+    account: Account,
+    provider: Provider,
+    actualModel: string,
+    startTime: number
+  ): Promise<ForwardResult> {
+    try {
+      const transformed = this.transformRequestForPromptToolUse(request, provider)
+
+      const adapter = new GrokAdapter(provider, account)
+
+      const { stream, sessionId } = await adapter.chatCompletion({
+        model: request.model,
+        messages: transformed.messages as any,
+        stream: request.stream,
+        temperature: request.temperature,
+      }, { temporary: shouldDeleteSession() })
+
+      const latency = Date.now() - startTime
+      const deleteSessionCallback = shouldDeleteSession()
+        ? async () => {
+            try {
+              await adapter.deleteSession(sessionId)
+            } catch (error) {
+              console.error('[Grok] Failed to delete session:', error)
+            }
+          }
+        : undefined
+
+      if (request.stream === true) {
+        const handler = new GrokStreamHandler(actualModel, sessionId, deleteSessionCallback, transformed.plan)
+        const transformedStream = await handler.handleStream(stream)
+
+        return {
+          success: true,
+          status: 200,
+          headers: {},
+          stream: transformedStream as any,
+          skipTransform: true,
+          latency,
+          providerSessionId: sessionId,
+        }
+      }
+
+      const handler = new GrokStreamHandler(actualModel, sessionId, undefined, transformed.plan)
+      const result = await handler.handleNonStream(stream)
+
+      this.applyToolCallsToResponse(result, transformed)
+
+      if (deleteSessionCallback) {
+        await deleteSessionCallback()
+      }
+
+      return {
+        success: true,
+        status: 200,
+        headers: {},
+        body: result,
+        latency,
+        providerSessionId: sessionId,
+      }
+    } catch (error) {
+      const latency = Date.now() - startTime
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        latency,
+      }
+    }
+  }
+
+  /**
    * Build URL
    */
   private buildUrl(provider: Provider, path: string): string {
@@ -1386,6 +1675,14 @@ export class RequestForwarder {
 
     if (request.user !== undefined) {
       body.user = request.user
+    }
+
+    if (request.tools !== undefined && Array.isArray(request.tools) && request.tools.length > 0) {
+      body.tools = request.tools
+    }
+
+    if (request.tool_choice !== undefined) {
+      body.tool_choice = request.tool_choice
     }
 
     return body

@@ -6,6 +6,7 @@ import { Toaster } from '@/components/ui/toaster'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const Dashboard = lazy(() => import('@/pages/Dashboard').then(m => ({ default: m.Dashboard })))
+const Chat = lazy(() => import('@/pages/Chat').then(m => ({ default: m.Chat })))
 const Providers = lazy(() => import('@/pages/Providers').then(m => ({ default: m.Providers })))
 const ProxySettings = lazy(() => import('@/pages/ProxySettings').then(m => ({ default: m.ProxySettings })))
 const Models = lazy(() => import('@/pages/Models').then(m => ({ default: m.Models })))
@@ -35,6 +36,7 @@ function App() {
         <Route path="/tray" element={<TrayView />} />
         <Route element={<MainLayout />}>
           <Route path="/" element={<Suspense fallback={<PageLoader />}><Dashboard /></Suspense>} />
+          <Route path="/chat" element={<Suspense fallback={<PageLoader />}><Chat /></Suspense>} />
           <Route path="/providers" element={<Suspense fallback={<PageLoader />}><Providers /></Suspense>} />
           <Route path="/proxy" element={<Suspense fallback={<PageLoader />}><ProxySettings /></Suspense>} />
           <Route path="/models" element={<Suspense fallback={<PageLoader />}><Models /></Suspense>} />

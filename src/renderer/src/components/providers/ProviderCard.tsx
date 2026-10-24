@@ -25,8 +25,11 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Provider, ProviderStatus } from '@/types/electron'
+import chatgptIcon from '@/assets/providers/chatgpt.svg'
 import deepseekIcon from '@/assets/providers/deepseek.svg'
+import geminiIcon from '@/assets/providers/gemini.svg'
 import glmIcon from '@/assets/providers/glm.svg'
+import grokIcon from '@/assets/providers/grok.svg'
 import kimiIcon from '@/assets/providers/kimi.svg'
 import minimaxIcon from '@/assets/providers/minimax.svg'
 import perplexityIcon from '@/assets/providers/perplexity.svg'
@@ -35,8 +38,11 @@ import zaiIcon from '@/assets/providers/zai.svg'
 import mimoIcon from '@/assets/providers/mimo.svg'
 
 const providerIcons: Record<string, string> = {
+  chatgpt: chatgptIcon,
   deepseek: deepseekIcon,
+  gemini: geminiIcon,
   glm: glmIcon,
+  grok: grokIcon,
   kimi: kimiIcon,
   minimax: minimaxIcon,
   mimo: mimoIcon,

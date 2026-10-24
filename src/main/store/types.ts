@@ -150,6 +150,8 @@ export interface Provider {
   supportedModels?: string[]
   /** Model name mapping */
   modelMappings?: Record<string, string>
+  /** Timestamp of last successful dynamic model fetch; when set, startup sync keeps the fetched list */
+  modelsFetchedAt?: number
   /** Provider status */
   status?: ProviderStatus
   /** Last status check time */
@@ -203,12 +205,16 @@ export interface AppConfig {
   requestTimeout: number
   /** Retry count */
   retryCount: number
+  /** Account failover: automatically switch to the next available account when a request fails */
+  accountFailoverRetry: boolean
   /** API Key list */
   apiKeys: ApiKey[]
   /** Whether to enable API Key authentication */
   enableApiKey: boolean
   /** OAuth proxy mode: 'system' uses system proxy, 'none' disables proxy */
   oauthProxyMode: 'system' | 'none'
+  /** Outbound API proxy URL for provider requests (http/https/socks5), empty = direct */
+  apiProxyUrl?: string
   /** Session management configuration */
   sessionConfig: SessionConfig
   /** Tool calling configuration */
@@ -807,6 +813,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   requestLogConfig: DEFAULT_REQUEST_LOG_CONFIG,
   requestTimeout: 60000,
   retryCount: 3,
+  accountFailoverRetry: false,
+  apiProxyUrl: '',
   apiKeys: [],
   enableApiKey: false,
   oauthProxyMode: 'system',

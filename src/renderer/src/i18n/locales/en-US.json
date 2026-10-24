@@ -4,11 +4,12 @@
     "switchToChinese": "Switch to Chinese"
   },
   "app": {
-    "name": "Chat2API",
+    "name": "Chat2API Plus",
     "description": "AI API Proxy Management System"
   },
   "nav": {
     "dashboard": "Dashboard",
+    "chat": "Chat",
     "providers": "Providers",
     "proxy": "Proxy Settings",
     "models": "Models",
@@ -17,6 +18,42 @@
     "session": "Session",
     "settings": "Settings",
     "about": "About"
+  },
+  "chat": {
+    "newChat": "New Chat",
+    "history": "History",
+    "noHistory": "No chat history yet",
+    "untitled": "New Chat",
+    "deleteConversation": "Delete conversation",
+    "deleteConfirm": "Are you sure you want to delete this conversation?",
+    "renameConversation": "Rename",
+    "copyTitle": "Copy Title",
+    "forkConversation": "Fork Conversation",
+    "exportMarkdown": "Export Markdown",
+    "groupToday": "Today",
+    "groupYesterday": "Yesterday",
+    "groupLast7": "Previous 7 Days",
+    "groupLast30": "Previous 30 Days",
+    "groupEarlier": "Earlier",
+    "selectModel": "Select Model",
+    "noModels": "No available models\nPlease add providers and models first",
+    "generating": "Generating…",
+    "thinking": "Thinking",
+    "copied": "Copied",
+    "copy": "Copy",
+    "you": "You",
+    "assistant": "AI",
+    "emptyResponse": "No response content received",
+    "emptyChat": "Start your first conversation",
+    "emptyChatDesc": "Pick a model, type a message, press Enter to send",
+    "inputPlaceholder": "Type a message… (Enter to send, Shift+Enter for newline)",
+    "inputHint": "Chat history is stored locally only",
+    "send": "Send",
+    "stop": "Stop",
+    "proxyRunning": "Proxy Running",
+    "proxyNotRunning": "Proxy Not Running",
+    "scrollToBottom": "Scroll to bottom",
+    "searchModels": "Search models…"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -236,6 +273,21 @@
     "pasteFailed": "Paste failed",
     "pasteFailedDesc": "Please paste manually"
   },
+  "chatgpt": {
+    "name": "ChatGPT",
+    "description": "ChatGPT web proxy with Access Token, supports deep thinking and web search",
+    "accessToken": "Access Token",
+    "tokenPlaceholder": "Enter ChatGPT Access Token",
+    "tokenHelp": "Open https://chatgpt.com/api/auth/session in your browser, log in, and copy the accessToken field from the returned JSON",
+    "models": {
+      "Auto": "Auto (platform selects model)",
+      "GPT-5": "GPT-5",
+      "GPT-5-2": "GPT-5.2",
+      "GPT-5-3": "GPT-5.3",
+      "GPT-5-3-Mini": "GPT-5.3 Mini",
+      "GPT-5-Mini": "GPT-5 Mini"
+    }
+  },
   "deepseek": {
     "name": "DeepSeek",
     "description": "DeepSeek AI assistant, supports deep thinking and web search",
@@ -341,6 +393,20 @@
     "sessionTokenHelp": "Get __Secure-next-auth.session-token Cookie from browser DevTools, or switch to OAuth Login tab for automatic extraction",
     "freeUserNotice": "Official free users: Auto model only, auto routing"
   },
+  "gemini": {
+    "name": "Gemini",
+    "description": "Google Gemini interface (Flash / Thinking / Pro models)",
+    "cookie": "Cookie",
+    "cookiePlaceholder": "Enter the full Gemini cookie string",
+    "cookieHelp": "Open https://gemini.google.com and sign in, then copy the full cookie string from DevTools (Application > Cookies > https://gemini.google.com). Must include SID, HSID, SSID, APISID, SAPISID, __Secure-1PSID."
+  },
+  "grok": {
+    "name": "Grok",
+    "description": "xAI Grok interface (grok-4 / grok-4-fast / grok-3)",
+    "cookie": "Cookie",
+    "cookiePlaceholder": "Paste the full https://grok.com cookie string",
+    "cookieHelp": "Open https://grok.com and sign in, then copy the full cookie string from DevTools (Application > Cookies > https://grok.com). It must include the sso value."
+  },
   "proxy": {
     "title": "Proxy Settings",
     "description": "Configure API proxy service parameters and management policies",
@@ -445,6 +511,8 @@
     "roundRobinDesc": "Use each available account in sequence for even request distribution",
     "fillFirstDesc": "Prioritize current account until limit reached, then switch to next",
     "failoverDesc": "Automatically skip failed accounts. Switch to other accounts after 3 consecutive failures, auto-recover after 1 minute",
+    "accountFailoverRetry": "Account Failover",
+    "accountFailoverRetryDesc": "Automatically retry with the next available account when a request fails (e.g., model unavailable or token expired), up to 3 accounts",
     "accountWeightConfig": "Account Weight Configuration",
     "weightHelp": "Higher weight means higher probability of selection. Only effective in round-robin strategy.",
     "noActiveAccounts": "No active accounts",
@@ -672,6 +740,9 @@
     "oauthProxyModeHelp": "Set network proxy mode for OAuth login",
     "oauthProxySystem": "System Proxy",
     "oauthProxyNone": "No Proxy",
+    "apiProxyUrl": "API Outbound Proxy",
+    "apiProxyUrlHelp": "Proxy used for provider API requests to bypass risk controls. Supports http/https/socks5; leave empty for direct connection",
+    "apiProxyUrlPlaceholder": "http://host:port or socks5://user:pass@host:port",
     "logSettings": "Log Settings",
     "logLevel": "Log Level",
     "logLevelHelp": "Select log recording level",
@@ -722,7 +793,7 @@
     "resetFailed": "Failed to reset application",
     "about": "About",
     "aboutDesc": "Application information and version",
-    "appName": "Chat2API",
+    "appName": "Chat2API Plus",
     "appDesc": "Multi-platform AI Service Unified Management Tool",
     "appVersion": "App Version",
     "currentVersion": "Current Version",
@@ -891,6 +962,7 @@
     "warningTitle": "Important Notice",
     "warningMessage": "The actual model ID must be obtained from the provider's official page. Incorrect ID will cause chat failures. Please confirm the model ID on the official page before adding.",
     "addDialogTitle": "Add Custom Model",
+    "editDialogTitle": "Edit Model",
     "displayNameLabel": "Model Display Name",
     "displayNamePlaceholder": "e.g., My-Custom-Model",
     "displayNameHelp": "Model name used by AI client",
@@ -903,6 +975,8 @@
     "nameExists": "Model display name already exists",
     "addSuccess": "Model added successfully",
     "addError": "Failed to add model",
+    "editSuccess": "Model updated successfully",
+    "editError": "Failed to update model",
     "removeSuccess": "Model removed successfully",
     "removeError": "Failed to remove model",
     "resetSuccess": "Models reset to default",
@@ -931,9 +1005,9 @@
     "protocolFormatTooltip": "Only for diagnosing custom providers not covered by provider profiles. Built-in priority providers use backend profiles for tool calling.",
     "bracketFormat": "Bracket Diagnostic Format",
     "bracketFormatDesc": "Only for inspecting old output, not a tool calling path for priority providers",
-    "xmlFormat": "Chat2API XML",
+    "xmlFormat": "Chat2API Plus XML",
     "xmlFormatDesc": "Default managed tool calling protocol",
-    "providerProfileNotice": "DeepSeek, Kimi, GLM, and Qwen use backend provider profiles for tool calling. Priority providers use Chat2API XML.",
+    "providerProfileNotice": "DeepSeek, Kimi, GLM, and Qwen use backend provider profiles for tool calling. Priority providers use Chat2API Plus XML.",
     "injectionConfig": "Injection Config",
     "configDescription": "Control tool prompt injection strategy",
     "injectionMode": "Injection Mode",
@@ -1018,12 +1092,15 @@
     "supported": "Supported",
     "smoke": {
       "title": "Smoke test",
-      "description": "Generate a minimal weather tool-call fixture through the local management API.",
+      "description": "Generate a minimal weather tool-call fixture directly inside the app.",
       "run": "Run test",
       "not_run": "Not run",
       "running": "Running",
       "pass": "Passed",
-      "failed": "Failed"
+      "failed": "Failed",
+      "errorLogTitle": "Failure log",
+      "unknownError": "Unknown error",
+      "dismissError": "Dismiss"
     },
     "advanced": {
       "title": "Advanced diagnostics",

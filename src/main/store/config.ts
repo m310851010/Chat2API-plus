@@ -298,8 +298,52 @@ export class ConfigManager {
     if (count < 0 || count > 10) {
       throw new Error('Retry count must be between 0-10')
     }
-    
+
     this.update({ retryCount: count })
+  }
+
+  /**
+   * Get account failover retry status
+   */
+  static getAccountFailoverRetry(): boolean {
+    const config = this.get()
+    return config.accountFailoverRetry === true
+  }
+
+  /**
+   * Set account failover retry
+   * @param enabled Whether enabled
+   */
+  static setAccountFailoverRetry(enabled: boolean): void {
+    this.update({ accountFailoverRetry: enabled })
+  }
+
+  /**
+   * Get outbound API proxy URL
+   */
+  static getApiProxyUrl(): string {
+    const config = this.get()
+    return config.apiProxyUrl || ''
+  }
+
+  /**
+   * Set outbound API proxy URL
+   * @param url Proxy URL (http/https/socks5), empty string disables
+   */
+  static setApiProxyUrl(url: string): void {
+    const trimmed = (url || '').trim()
+    if (trimmed) {
+      try {
+        const parsed = new URL(trimmed)
+        const protocol = parsed.protocol.replace(':', '').toLowerCase()
+        if (!['http', 'https', 'socks', 'socks5', 'socks4'].includes(protocol)) {
+          throw new Error(`unsupported protocol: ${protocol}`)
+        }
+      } catch (error) {
+        throw new Error(`Invalid proxy URL: ${error instanceof Error ? error.message : error}`)
+      }
+    }
+    this.update({ apiProxyUrl: trimmed })
   }
 
   // ==================== Utility Methods ====================

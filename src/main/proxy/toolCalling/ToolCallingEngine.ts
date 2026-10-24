@@ -73,7 +73,11 @@ export class ToolCallingEngine {
     if (parseResult.toolCalls.length === 0) return
 
     message.content = parseResult.content || null
-    message.tool_calls = parseResult.toolCalls
+    message.tool_calls = parseResult.toolCalls.map((call) => {
+      const { rawText, ...cleaned } = call
+      void rawText
+      return cleaned
+    })
 
     const choice = result.choices[0]
     choice.finish_reason = 'tool_calls'

@@ -23,6 +23,21 @@ export interface TokenExtractionConfig {
 }
 
 export const TOKEN_EXTRACTION_CONFIGS: Record<ProviderType, TokenExtractionConfig> = {
+  chatgpt: {
+    loginUrl: 'https://chatgpt.com/api/auth/session',
+    tokenSources: [
+      {
+        type: 'networkHeader',
+        key: 'authorization',
+        urlPattern: '*://*.chatgpt.com/backend-api/*',
+        extractPattern: '^Bearer\\s+(.+)$',
+      },
+    ],
+    targetDomains: ['.chatgpt.com', 'chatgpt.com'],
+    successUrlPatterns: [/chatgpt\.com/i],
+    windowTitle: 'ChatGPT Login',
+  },
+
   kimi: {
     loginUrl: 'https://www.kimi.com',
     tokenSources: [
@@ -161,6 +176,40 @@ export const TOKEN_EXTRACTION_CONFIGS: Record<ProviderType, TokenExtractionConfi
     targetDomains: ['.perplexity.ai', 'perplexity.ai'],
     successUrlPatterns: [/perplexity\.ai/i],
     windowTitle: 'Perplexity Login - Please click Sign In to login',
+  },
+
+  gemini: {
+    loginUrl: 'https://gemini.google.com/app',
+    tokenSources: [
+      {
+        type: 'cookie',
+        key: '__Secure-1PSID',
+      },
+      {
+        type: 'cookie',
+        key: 'SAPISID',
+      },
+    ],
+    targetDomains: ['.google.com', 'google.com', 'accounts.google.com'],
+    successUrlPatterns: [/gemini\.google\.com\/app/i, /accounts\.google\.com/i],
+    windowTitle: 'Gemini Login',
+  },
+
+  grok: {
+    loginUrl: 'https://grok.com',
+    tokenSources: [
+      {
+        type: 'cookie',
+        key: 'sso',
+      },
+      {
+        type: 'cookie',
+        key: 'sso-rw',
+      },
+    ],
+    targetDomains: ['.grok.com', 'grok.com'],
+    successUrlPatterns: [/grok\.com/i],
+    windowTitle: 'Grok Login',
   },
 }
 

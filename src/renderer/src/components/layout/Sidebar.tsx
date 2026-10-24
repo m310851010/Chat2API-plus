@@ -13,6 +13,7 @@ import {
   Cpu,
   Info,
   MessageSquare,
+  MessageSquareText,
   AlertTriangle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -36,6 +37,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { titleKey: 'nav.dashboard', href: '/', icon: LayoutDashboard },
+  { titleKey: 'nav.chat', href: '/chat', icon: MessageSquareText },
   { titleKey: 'nav.providers', href: '/providers', icon: Server },
   { titleKey: 'nav.proxy', href: '/proxy', icon: Settings2 },
   { titleKey: 'nav.models', href: '/models', icon: Cpu },

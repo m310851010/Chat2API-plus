@@ -113,6 +113,13 @@ const providersAPI = {
   }> => 
     ipcRenderer.invoke(IpcChannels.PROVIDERS_ADD_CUSTOM_MODEL, providerId, model),
   
+  updateModel: (providerId: string, originalName: string, model: { displayName: string; actualModelId: string }): Promise<{
+    success: boolean
+    models: EffectiveModel[]
+    error?: string
+  }> => 
+    ipcRenderer.invoke(IpcChannels.PROVIDERS_UPDATE_MODEL, providerId, originalName, model),
+  
   removeModel: (providerId: string, modelName: string): Promise<{
     success: boolean
     models: EffectiveModel[]
@@ -444,6 +451,9 @@ const appAPI = {
 
   openExternal: (url: string): Promise<void> =>
     ipcRenderer.invoke(IpcChannels.APP_OPEN_EXTERNAL, url),
+
+  saveTextFile: (fileName: string, content: string): Promise<string | null> =>
+    ipcRenderer.invoke(IpcChannels.APP_SAVE_TEXT_FILE, { fileName, content }),
 
   checkUpdate: (): Promise<UpdateStatus> =>
     ipcRenderer.invoke(IpcChannels.APP_CHECK_UPDATE),

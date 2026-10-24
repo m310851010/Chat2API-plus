@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OAuth Module Type Definitions
  * Defines types and interfaces for provider authentication
  */
@@ -130,10 +130,20 @@ export interface ManualTokenConfig {
  * Manual input config for each provider
  */
 export const MANUAL_TOKEN_CONFIGS: Record<ProviderType, ManualTokenConfig[]> = {
+  chatgpt: [
+    {
+      providerType: 'chatgpt',
+      tokenType: 'access',
+      label: 'Access Token',
+      placeholder: 'Enter ChatGPT Access Token',
+      description: 'Open https://chatgpt.com/api/auth/session in your browser, log in, and copy the accessToken field value',
+      helpUrl: 'https://chatgpt.com/api/auth/session',
+    },
+  ],
   deepseek: [
     {
       providerType: 'deepseek',
-      tokenType: 'token',
+      tokenType: 'access',
       label: 'User Token',
       placeholder: 'Enter the userToken obtained from browser LocalStorage',
       description: 'Open Developer Tools on chat.deepseek.com, find userToken in Application > Local Storage',
@@ -171,7 +181,7 @@ export const MANUAL_TOKEN_CONFIGS: Record<ProviderType, ManualTokenConfig[]> = {
   minimax: [
     {
       providerType: 'minimax',
-      tokenType: 'token',
+      tokenType: 'access',
       label: 'Token (realUserID_token)',
       placeholder: 'Format: realUserID_token',
       description: 'Obtain after logging in to agent.minimaxi.com, format is realUserID + "_" + token',
@@ -182,10 +192,30 @@ export const MANUAL_TOKEN_CONFIGS: Record<ProviderType, ManualTokenConfig[]> = {
     {
       providerType: 'qwen',
       tokenType: 'cookie',
-      label: 'tongyi_sso_ticket',
-      placeholder: 'Enter tongyi_sso_ticket',
-      description: 'After logging in to www.qianwen.com, get tongyi_sso_ticket from Cookie',
+      label: 'SSO Ticket',
+      placeholder: 'Enter Qwen SSO Ticket',
+      description: 'Get the tongyi_sso_ticket cookie from www.qianwen.com browser DevTools',
       helpUrl: 'https://www.qianwen.com',
+    },
+  ],
+  zai: [
+    {
+      providerType: 'zai',
+      tokenType: 'access',
+      label: 'Token',
+      placeholder: 'Enter Z.ai token',
+      description: 'Open chat.z.ai, get the token from browser LocalStorage or cookie',
+      helpUrl: 'https://chat.z.ai',
+    },
+  ],
+  mimo: [
+    {
+      providerType: 'mimo',
+      tokenType: 'access',
+      label: 'Tokens',
+      placeholder: 'Enter service token / user ID / PH token',
+      description: 'Use OAuth Login tab to sign in and extract serviceToken, userId and PH_TOKEN automatically',
+      helpUrl: 'https://aistudio.xiaomimimo.com',
     },
   ],
   'qwen-ai': [
@@ -206,6 +236,26 @@ export const MANUAL_TOKEN_CONFIGS: Record<ProviderType, ManualTokenConfig[]> = {
       placeholder: 'Paste Perplexity cookies or import HAR file',
       description: 'Get cookies from perplexity.ai browser DevTools or import HAR file',
       helpUrl: 'https://www.perplexity.ai',
+    },
+  ],
+  gemini: [
+    {
+      providerType: 'gemini',
+      tokenType: 'cookie',
+      label: 'Cookies',
+      placeholder: 'Paste Gemini cookies or paste HAR file',
+      description: 'Use OAuth Login tab to sign in with Google account and extract cookies automatically, or paste from browser DevTools',
+      helpUrl: 'https://gemini.google.com',
+    },
+  ],
+  grok: [
+    {
+      providerType: 'grok',
+      tokenType: 'cookie',
+      label: 'Cookies',
+      placeholder: 'Paste the full Grok cookie string or paste HAR file',
+      description: 'Use OAuth Login tab to sign in with X.com account and extract cookies automatically, or paste the full cookie string from browser DevTools',
+      helpUrl: 'https://grok.com',
     },
   ],
 }

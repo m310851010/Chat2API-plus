@@ -1,7 +1,7 @@
-# Chat2API
+﻿# Chat2API Plus
 
 <p align="center">
-  <img src="build/icons.png" alt="Chat2API Logo" width="128" height="128">
+  <img src="build/icons.png" alt="Chat2API Plus Logo" width="128" height="128">
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  Chat2API enables zero-cost access to leading AI models by leveraging official web UIs. It supports providers such as DeepSeek, GLM, Kimi, MiniMax, Qwen, and Z.ai, and seamlessly integrates with tools like openlcaw, Cline, and Roo-Code — making any OpenAI-compatible client work out of the box.
+  Chat2API Plus enables zero-cost access to leading AI models by leveraging official web UIs. It supports providers such as DeepSeek, GLM, Kimi, MiniMax, Qwen, and Z.ai, and seamlessly integrates with tools like openlcaw, Cline, and Roo-Code — making any OpenAI-compatible client work out of the box.
 </p>
 
 ![Product Preview](docs/screenshots/preview.png)
@@ -49,10 +49,13 @@
 
 | Provider         | Auth Type     | OAuth | Models                                                                                                                                                                                                                                          |
 | ---------------- | ------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ChatGPT          | Access Token  | Yes   | auto, gpt-5, gpt-5-1, gpt-5-2, gpt-5-3, gpt-5-3-mini, gpt-5-mini                                                                                                                                                                                |
 | DeepSeek         | User Token    | Yes   | deepseek-v4-flash, deepseek-v4-pro                                                                                                                                                                                                              |
+| Gemini           | Cookie        | Yes   | gemini-3.7-flash, gemini-3.6-flash, gemini-3.5-flash, gemini-3.5-flash-thinking, gemini-3.5-flash-thinking-lite, gemini-3.1-pro, gemini-auto, gemini-flash-lite                                                                                   |
+| Grok             | Cookie        | Yes   | grok-4, grok-4-fast, grok-3, grok-3-mini, grok-auto                                                                                                                                                                                             |
 | GLM              | Refresh Token | Yes   | GLM-5.1                                                                                                                                                                                                                                         |
 | Kimi             | JWT Token     | Yes   | Kimi-K2.6                                                                                                                                                                                                                                       |
-| MiniMax          | JWT Token     | Yes   | MiniMax-M2.7                                                                                                                                                                                                                                    |
+| MiniMax          | JWT Token     | Yes   | MiniMax-M3, MiniMax-M2.7                                                                                                                                                                                                                        |
 | Mimo             | Cookie        | Yes   | MiMo-V2.5-Pro, MiMo-V2.5, MiMo-V2-Flash                                                                                                                                                                                                         |
 | Perplexity       | Cookie        | Yes   | Auto                                                                                                                                                                                                                                           |
 | Qwen (CN)        | SSO Ticket    | Yes   | Qwen3.6, Qwen3.7-Max, Qwen3.5-Flash, Qwen3-Max, Qwen3-Max-Thinking-Preview, Qwen3-Coder                                                                                                                                                         |
@@ -65,14 +68,14 @@ Provider adaptation notes and manual model-addition guides are in [docs/provider
 
 ### Download
 
-Download the latest release from [GitHub Releases](https://github.com/xiaoY233/Chat2API/releases):
+Download the latest release from [GitHub Releases](https://github.com/m310851010/Chat2API-plus/releases):
 
 | Platform              | Download                                |
 | --------------------- | --------------------------------------- |
-| macOS (Apple Silicon) | `Chat2API-x.x.x-arm64.dmg`              |
-| macOS (Intel)         | `Chat2API-x.x.x-x64.dmg`                |
-| Windows               | `Chat2API-x.x.x-x64-setup.exe`          |
-| Linux                 | `Chat2API-x.x.x-x64.AppImage` or `.deb` |
+| macOS (Apple Silicon) | `Chat2API Plus-x.x.x-arm64.dmg`              |
+| macOS (Intel)         | `Chat2API Plus-x.x.x-x64.dmg`                |
+| Windows               | `Chat2API Plus-x.x.x-x64-setup.exe`          |
+| Linux                 | `Chat2API Plus-x.x.x-x64.AppImage` or `.deb` |
 
 ### Build from Source
 
@@ -84,8 +87,8 @@ Download the latest release from [GitHub Releases](https://github.com/xiaoY233/C
 
 ```bash
 # Clone the repository
-git clone https://github.com/xiaoY233/Chat2API.git
-cd Chat2API
+git clone https://github.com/m310851010/Chat2API-plus.git
+cd Chat2API-plus
 
 # Install dependencies
 npm install
@@ -108,7 +111,7 @@ npm run build:all          # Build for all platforms
 
 ### Step 1: Launch the App
 
-After installation, launch Chat2API. You'll see the main dashboard.
+After installation, launch Chat2API Plus. You'll see the main dashboard.
 
 ### Step 2: Add a Provider
 
@@ -191,7 +194,7 @@ For security, you can enable API Key authentication:
 ## 🏗️ Architecture
 
 ```
-Chat2API/
+Chat2API-plus/
 ├── src/
 │   ├── main/                    # Electron main process
 │   │   ├── index.ts            # App entry point
@@ -237,12 +240,12 @@ Application data is stored in `~/.chat2api/` directory:
 Due to macOS security mechanisms, apps downloaded outside the App Store may trigger this warning. Run the following command to fix it:
 
 ```bash
-sudo xattr -rd com.apple.quarantine "/Applications/Chat2API.app"
+sudo xattr -rd com.apple.quarantine "/Applications/Chat2API Plus.app"
 ```
 
 ### How to update?
 
-Check for updates in the **About** page, or download the latest version from [GitHub Releases](https://github.com/xiaoY233/Chat2API/releases).
+Check for updates in the **About** page, or download the latest version from [GitHub Releases](https://github.com/m310851010/Chat2API-plus/releases).
 
 ## 🤝 Contributing
 

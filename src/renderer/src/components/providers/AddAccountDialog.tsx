@@ -30,6 +30,7 @@ import {
   Check
 } from 'lucide-react'
 import type { Provider, CredentialField, Account, BuiltinProviderConfig, ProviderVendor } from '@/types/electron'
+import { TextWithLinks } from '@/components/providers/TextWithLinks'
 
 /**
  * Map OAuth credentials to provider credential field names
@@ -445,12 +446,12 @@ export function AddAccountDialog({
               </div>
             )}
 
-            {validationResult.valid && validationResult.userInfo && (
+            {validationResult.valid && (
               <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 p-3 rounded-lg">
                 <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
                 <div>
                   <span className="font-medium">{t('providers.validationSuccess')}</span>
-                  {validationResult.userInfo.quota !== undefined && (
+                  {validationResult.userInfo?.quota !== undefined && (
                     <span className="ml-2">
                       {t('providers.quota')}: {validationResult.userInfo.used || 0} / {validationResult.userInfo.quota}
                     </span>
@@ -541,6 +542,13 @@ function CredentialFieldsForm({ fields, credentials, onChange, t, providerId }: 
     if (!providerId) return { label: field.label, placeholder: field.placeholder, helpText: field.helpText }
 
     const translations: Record<string, Record<string, { label: string; placeholder: string; helpText: string }>> = {
+      chatgpt: {
+        token: {
+          label: t('chatgpt.accessToken'),
+          placeholder: t('chatgpt.tokenPlaceholder'),
+          helpText: t('chatgpt.tokenHelp'),
+        },
+      },
       deepseek: {
         token: {
           label: t('deepseek.userToken'),
@@ -622,6 +630,20 @@ function CredentialFieldsForm({ fields, credentials, onChange, t, providerId }: 
           label: t('perplexity.sessionToken'),
           placeholder: t('perplexity.sessionTokenPlaceholder'),
           helpText: t('perplexity.sessionTokenHelp'),
+        },
+      },
+      gemini: {
+        cookie: {
+          label: t('gemini.cookie'),
+          placeholder: t('gemini.cookiePlaceholder'),
+          helpText: t('gemini.cookieHelp'),
+        },
+      },
+      grok: {
+        token: {
+          label: t('grok.cookie'),
+          placeholder: t('grok.cookiePlaceholder'),
+          helpText: t('grok.cookieHelp'),
         },
       },
     }
@@ -740,7 +762,7 @@ function CredentialFieldsForm({ fields, credentials, onChange, t, providerId }: 
               />
             )}
             {translated.helpText && (
-              <p className="text-xs text-muted-foreground">{translated.helpText}</p>
+              <TextWithLinks text={translated.helpText} className="text-xs text-muted-foreground" />
             )}
           </div>
         )
