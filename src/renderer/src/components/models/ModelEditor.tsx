@@ -28,7 +28,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useToast } from '@/hooks/use-toast'
 import { useProvidersStore } from '@/stores/providersStore'
 import type { EffectiveModel } from '@/types/electron'
-import { Plus, Trash2, RotateCcw, AlertTriangle, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, RotateCcw, AlertTriangle, Loader2 } from 'lucide-react'
 
 interface ModelEditorProps {
   open: boolean
@@ -50,9 +50,12 @@ export function ModelEditor({
   const [models, setModels] = useState<EffectiveModel[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [newDisplayName, setNewDisplayName] = useState('')
   const [newActualModelId, setNewActualModelId] = useState('')
   const [isAdding, setIsAdding] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingOriginalName, setEditingOriginalName] = useState<string | null>(null)
   const [isResetting, setIsResetting] = useState(false)
   const [deletingModel, setDeletingModel] = useState<string | null>(null)
 
@@ -142,6 +145,80 @@ export function ModelEditor({
     }
   }
 
+  const handleEditModel = async () => {
+    if (!editingOriginalName) return
+
+    if (!newDisplayName.trim()) {
+      toast({
+        title: t('common.error'),
+        description: t('modelEditor.nameRequired'),
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (!newActualModelId.trim()) {
+      toast({
+        title: t('common.error'),
+        description: t('modelEditor.idRequired'),
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (models.some(m => m.displayName === newDisplayName.trim() && m.displayName !== editingOriginalName)) {
+      toast({
+        title: t('common.error'),
+        description: t('modelEditor.nameExists'),
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setIsEditing(true)
+    try {
+      const result = await window.electronAPI.providers.updateModel(providerId, editingOriginalName, {
+        displayName: newDisplayName.trim(),
+        actualModelId: newActualModelId.trim(),
+      })
+
+      if (result.success) {
+        setModels(result.models)
+        closeEditDialog()
+        setModelsLastUpdated(Date.now())
+        toast({
+          title: t('common.success'),
+          description: t('modelEditor.editSuccess'),
+        })
+      } else {
+        throw new Error(result.error || 'Failed to update model')
+      }
+    } catch (error) {
+      console.error('Failed to update model:', error)
+      toast({
+        title: t('common.error'),
+        description: error instanceof Error ? error.message : t('modelEditor.editError'),
+        variant: 'destructive',
+      })
+    } finally {
+      setIsEditing(false)
+    }
+  }
+
+  const openEditDialog = (model: EffectiveModel) => {
+    setEditingOriginalName(model.displayName)
+    setNewDisplayName(model.displayName)
+    setNewActualModelId(model.actualModelId)
+    setIsEditDialogOpen(true)
+  }
+
+  const closeEditDialog = () => {
+    setIsEditDialogOpen(false)
+    setEditingOriginalName(null)
+    setNewDisplayName('')
+    setNewActualModelId('')
+  }
+
   const handleRemoveModel = async (modelName: string) => {
     setDeletingModel(modelName)
     try {
@@ -200,7 +277,7 @@ export function ModelEditor({
     }
   }
 
-  const renderModelTable = (modelList: EffectiveModel[], isCustom: boolean) => {
+  const renderModelTable = (modelList: EffectiveModel[]) => {
     if (modelList.length === 0) {
       return (
         <div className="text-center py-8 text-muted-foreground border rounded-lg">
@@ -235,23 +312,34 @@ export function ModelEditor({
                     </code>
                   </TableCell>
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        if (window.confirm(t('modelEditor.confirmDelete'))) {
-                          handleRemoveModel(model.displayName)
-                        }
-                      }}
-                      disabled={isDeleting}
-                      className="h-8 w-8 text-destructive hover:text-destructive"
-                    >
-                      {isDeleting ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openEditDialog(model)}
+                        disabled={isDeleting}
+                        className="h-8 w-8"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          if (window.confirm(t('modelEditor.confirmDelete'))) {
+                            handleRemoveModel(model.displayName)
+                          }
+                        }}
+                        disabled={isDeleting}
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                      >
+                        {isDeleting ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               )
@@ -283,12 +371,12 @@ export function ModelEditor({
             <div className="space-y-6 mt-4">
               <div>
                 <h3 className="text-lg font-semibold mb-3">{t('modelEditor.defaultModels')}</h3>
-                {renderModelTable(defaultModels, false)}
+                {renderModelTable(defaultModels)}
               </div>
 
               <div>
                 <h3 className="text-lg font-semibold mb-3">{t('modelEditor.customModels')}</h3>
-                {renderModelTable(customModels, true)}
+                {renderModelTable(customModels)}
               </div>
 
               <Alert>
@@ -389,6 +477,64 @@ export function ModelEditor({
                 </>
               ) : (
                 t('modelEditor.add')
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
+        if (!open) closeEditDialog()
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('modelEditor.editDialogTitle')}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="editDisplayName">{t('modelEditor.displayNameLabel')}</Label>
+              <Input
+                id="editDisplayName"
+                placeholder={t('modelEditor.displayNamePlaceholder')}
+                value={newDisplayName}
+                onChange={(e) => setNewDisplayName(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t('modelEditor.displayNameHelp')}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="editActualModelId">{t('modelEditor.actualIdLabel')}</Label>
+              <Input
+                id="editActualModelId"
+                placeholder={t('modelEditor.actualIdPlaceholder')}
+                value={newActualModelId}
+                onChange={(e) => setNewActualModelId(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t('modelEditor.actualIdHelp')}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={closeEditDialog}
+              disabled={isEditing}
+            >
+              {t('modelEditor.cancel')}
+            </Button>
+            <Button onClick={handleEditModel} disabled={isEditing}>
+              {isEditing ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t('common.loading')}
+                </>
+              ) : (
+                t('modelEditor.save')
               )}
             </Button>
           </DialogFooter>

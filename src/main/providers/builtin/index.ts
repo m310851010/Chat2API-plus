@@ -1,5 +1,8 @@
+import chatgptConfig from './chatgpt.ts'
 import deepseekConfig from './deepseek.ts'
+import geminiConfig from './gemini.ts'
 import glmConfig from './glm.ts'
+import grokConfig from './grok.ts'
 import kimiConfig from './kimi.ts'
 import minimaxConfig from './minimax.ts'
 import mimoConfig from './mimo.ts'
@@ -10,8 +13,11 @@ import zaiConfig from './zai.ts'
 import type { BuiltinProviderConfig } from '../../store/types.ts'
 
 export const builtinProviders: BuiltinProviderConfig[] = [
+  chatgptConfig,
   deepseekConfig,
+  geminiConfig,
   glmConfig,
+  grokConfig,
   kimiConfig,
   minimaxConfig,
   mimoConfig,
@@ -22,8 +28,11 @@ export const builtinProviders: BuiltinProviderConfig[] = [
 ]
 
 export const builtinProviderMap: Record<string, BuiltinProviderConfig> = {
+  chatgpt: chatgptConfig,
   deepseek: deepseekConfig,
+  gemini: geminiConfig,
   glm: glmConfig,
+  grok: grokConfig,
   kimi: kimiConfig,
   minimax: minimaxConfig,
   mimo: mimoConfig,
@@ -42,8 +51,11 @@ export function getBuiltinProviders(): BuiltinProviderConfig[] {
 }
 
 export {
+  chatgptConfig,
   deepseekConfig,
+  geminiConfig,
   glmConfig,
+  grokConfig,
   kimiConfig,
   minimaxConfig,
   mimoConfig,

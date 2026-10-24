@@ -1,7 +1,9 @@
 import axios, { AxiosError } from 'axios'
+import { net } from 'electron'
 import { getBuiltinProvider } from './builtin'
 import type { Provider, ProviderCheckResult, Account } from '../../shared/types'
 import type { BuiltinProviderConfig } from '../store/types'
+import { getProxyAgents } from '../proxy/adapters/chatgpt-proxy'
 
 const CHECK_TIMEOUT = 15000
 
@@ -130,6 +132,8 @@ export class ProviderChecker {
     }
     
     switch (provider.id) {
+      case 'chatgpt':
+        return this.checkChatGPTToken(account.credentials.token)
       case 'deepseek':
         return this.checkDeepSeekToken(account.credentials.token)
       case 'glm':
@@ -153,6 +157,10 @@ export class ProviderChecker {
           account.credentials.user_id,
           account.credentials.ph_token
         )
+      case 'gemini':
+        return this.checkGeminiCookie(account.credentials.cookie || '')
+      case 'grok':
+        return this.checkGrokToken(account.credentials.cookie || account.credentials.token || '')
       default:
         if (!builtinConfig.tokenCheckEndpoint) {
           return { valid: true }
@@ -175,6 +183,229 @@ export class ProviderChecker {
       userInfo: {
         name: 'Mimo User',
       },
+    }
+  }
+
+  /**
+   * GET request via Electron net (follows the system proxy automatically).
+   */
+  private static electronNetGet(
+    url: string,
+    headers: Record<string, string>,
+    timeoutMs = 20000
+  ): Promise<{ status: number; body: string }> {
+    return new Promise((resolve) => {
+      let done = false
+      const finish = (status: number, body: string) => {
+        if (!done) {
+          done = true
+          resolve({ status, body })
+        }
+      }
+      try {
+        const req = net.request({ method: 'GET', url })
+        for (const [k, v] of Object.entries(headers)) {
+          req.setHeader(k, v)
+        }
+        let body = ''
+        const timer = setTimeout(() => {
+          try {
+            req.abort()
+          } catch {
+            // ignore
+          }
+          finish(0, body.slice(0, 500))
+        }, timeoutMs)
+
+        req.on('response', (res) => {
+          const status = res.statusCode || 0
+          res.on('data', (chunk: Buffer) => {
+            if (body.length < 5 * 1024 * 1024) {
+              body += chunk.toString()
+            }
+          })
+          res.on('end', () => {
+            clearTimeout(timer)
+            finish(status, body)
+          })
+        })
+
+        req.on('error', (error) => {
+          clearTimeout(timer)
+          finish(0, String(error))
+        })
+
+        req.end()
+      } catch (error) {
+        finish(0, String(error))
+      }
+    })
+  }
+
+  private static async checkGeminiCookie(cookie: string): Promise<TokenCheckResult> {
+    try {
+      if (!cookie || !cookie.includes('=')) {
+        return { valid: false, error: 'Cookie is empty or malformed' }
+      }
+
+      const { status, body } = await this.electronNetGet('https://gemini.google.com/app', {
+        'Cookie': cookie,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      })
+
+      if (status === 0) {
+        return { valid: false, error: `Network error: ${body || 'request failed'}` }
+      }
+
+      if (status !== 200) {
+        return {
+          valid: false,
+          error: `Gemini returned HTTP ${status}; cookie may be invalid or expired`,
+        }
+      }
+
+      if (/"SNlM0e":"[^"]+"/.test(body)) {
+        return {
+          valid: true,
+          userInfo: { name: 'Gemini User' },
+        }
+      }
+
+      return {
+        valid: false,
+        error: 'Cookie is invalid or expired (SNlM0e token not found on the page)',
+      }
+    } catch (error) {
+      return {
+        valid: false,
+        error: error instanceof Error ? error.message : 'Cookie validation failed',
+      }
+    }
+  }
+
+  private static async checkGrokToken(rawCredential: string): Promise<TokenCheckResult> {
+    try {
+      if (!rawCredential) {
+        return { valid: false, error: 'Cookie is empty or malformed' }
+      }
+
+      // Accept either a full cookie string or a bare sso token value
+      const pairs: Record<string, string> = {}
+      for (const part of rawCredential.split(';')) {
+        const idx = part.indexOf('=')
+        if (idx > 0) {
+          pairs[part.slice(0, idx).trim()] = part.slice(idx + 1).trim()
+        }
+      }
+      const sso = pairs['sso'] || pairs['sso-rw'] || rawCredential
+      if (!sso) {
+        return { valid: false, error: 'Cookie must contain the "sso" value' }
+      }
+
+      const { status, body } = await this.electronNetGet(
+        'https://grok.com/rest/app-chat/conversations?order_by=desc',
+        {
+          'Cookie': `sso=${sso}; sso-rw=${sso}`,
+          'Accept': 'application/json',
+          'Origin': 'https://grok.com',
+          'Referer': 'https://grok.com/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        }
+      )
+
+      if (status === 0) {
+        return { valid: false, error: `Network error: ${body || 'request failed'}` }
+      }
+
+      if (status === 401 || status === 403) {
+        return { valid: false, error: 'Token is invalid or expired' }
+      }
+
+      if (status !== 200) {
+        return {
+          valid: false,
+          error: `Grok returned HTTP ${status}; token may be invalid`,
+        }
+      }
+
+      try {
+        JSON.parse(body)
+      } catch {
+        return {
+          valid: false,
+          error: 'Grok returned a non-JSON response (login challenge or Cloudflare page)',
+        }
+      }
+
+      return {
+        valid: true,
+        userInfo: { name: 'Grok User' },
+      }
+    } catch (error) {
+      return {
+        valid: false,
+        error: error instanceof Error ? error.message : 'Token validation failed',
+      }
+    }
+  }
+
+  private static async checkChatGPTToken(token: string): Promise<TokenCheckResult> {
+    try {
+      if (!token) {
+        return { valid: false, error: 'Access Token is empty' }
+      }
+
+      console.log('[ChatGPT] Validating Access Token:', token.substring(0, 20) + '...')
+
+      const proxyAgents = getProxyAgents()
+      const response = await axios.get(
+        'https://chatgpt.com/backend-api/me',
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Origin': 'https://chatgpt.com',
+            'Referer': 'https://chatgpt.com/',
+            'OAI-Language': 'zh-CN',
+          },
+          timeout: CHECK_TIMEOUT,
+          validateStatus: () => true,
+          ...(proxyAgents
+            ? { httpAgent: proxyAgents.httpAgent, httpsAgent: proxyAgents.httpsAgent }
+            : {}),
+        }
+      )
+
+      console.log('[ChatGPT] Validation response status:', response.status)
+
+      if (response.status === 200 && response.data) {
+        return {
+          valid: true,
+          userInfo: {
+            name: response.data.name,
+            email: response.data.email,
+          },
+        }
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        return { valid: false, error: 'Access Token expired or invalid' }
+      }
+
+      return {
+        valid: false,
+        error: `Validation failed: HTTP ${response.status}`,
+      }
+    } catch (error) {
+      console.error('[ChatGPT] Validation error:', error)
+      return {
+        valid: false,
+        error: error instanceof AxiosError
+          ? error.message
+          : 'Connection failed',
+      }
     }
   }
 
@@ -726,15 +957,38 @@ export class ProviderChecker {
         throw new Error(`Failed to fetch models: HTTP ${response.status}`)
       }
 
-      const models = response.data.data || []
+      // Compatible with different response shapes:
+      // - OpenAI style:   { data: [{ id, name }] }
+      // - ChatGPT web:    { models: [{ slug }] }
+      // - Plain array:    [{ id | model_id | slug | name }]
+      const models: unknown[] = Array.isArray(response.data?.data)
+        ? response.data.data
+        : Array.isArray(response.data?.models)
+          ? response.data.models
+          : Array.isArray(response.data)
+            ? response.data
+            : []
+
       const supportedModels: string[] = []
       const modelMappings: Record<string, string> = {}
 
       for (const model of models) {
-        if (model.name && model.id) {
-          supportedModels.push(model.name)
-          modelMappings[model.name] = model.id
+        if (typeof model === 'string') {
+          supportedModels.push(model)
+          modelMappings[model] = model
+          continue
         }
+        if (!model || typeof model !== 'object') continue
+        const item = model as Record<string, unknown>
+        const modelId = String(item.id ?? item.model_id ?? item.slug ?? item.name ?? '').trim()
+        if (!modelId) continue
+        const displayName = String(item.name ?? item.display_name ?? item.title ?? '').trim()
+        supportedModels.push(displayName || modelId)
+        modelMappings[displayName || modelId] = modelId
+      }
+
+      if (supportedModels.length === 0) {
+        throw new Error('No models found in the response')
       }
 
       return { supportedModels, modelMappings }

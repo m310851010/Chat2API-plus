@@ -311,7 +311,8 @@ class StoreManager {
           const hasUserOverrides = userModelOverrides[p.id] &&
             ((userModelOverrides[p.id].addedModels && userModelOverrides[p.id].addedModels.length > 0) ||
              (userModelOverrides[p.id].excludedModels && userModelOverrides[p.id].excludedModels.length > 0))
-          const shouldUseBuiltinModels = p.id === 'deepseek' || !hasUserOverrides
+          const hasDynamicModels = typeof p.modelsFetchedAt === 'number' && p.modelsFetchedAt > 0
+          const shouldUseBuiltinModels = (p.id === 'deepseek' || !hasUserOverrides) && !hasDynamicModels
           
           return { 
             ...p, 
@@ -1594,6 +1595,52 @@ class StoreManager {
     }
 
     overrides[providerId].addedModels.push(model)
+    this.setUserModelOverrides(overrides)
+
+    return this.getEffectiveModels(providerId)
+  }
+
+  /**
+   * Update Model for a Provider
+   * For custom models: update displayName/actualModelId in addedModels
+   * For default models: add to excludedModels and add updated as custom model
+   */
+  updateModel(providerId: string, originalName: string, model: CustomModel): EffectiveModel[] {
+    this.ensureInitialized()
+
+    const provider = this.getProviderById(providerId)
+    if (!provider) {
+      throw new Error('Provider not found')
+    }
+
+    const overrides = this.getUserModelOverrides()
+
+    if (!overrides[providerId]) {
+      overrides[providerId] = {
+        addedModels: [],
+        excludedModels: [],
+      }
+    }
+
+    const effectiveModels = this.getEffectiveModels(providerId)
+    const originalModel = effectiveModels.find(m => m.displayName === originalName)
+    if (!originalModel) {
+      throw new Error(`Model "${originalName}" not found`)
+    }
+
+    const isDefaultModel = !originalModel.isCustom
+
+    if (isDefaultModel) {
+      if (!overrides[providerId].excludedModels.includes(originalName)) {
+        overrides[providerId].excludedModels.push(originalName)
+      }
+      overrides[providerId].addedModels.push(model)
+    } else {
+      overrides[providerId].addedModels = overrides[providerId].addedModels.map(m =>
+        m.displayName === originalName ? { ...model } : m
+      )
+    }
+
     this.setUserModelOverrides(overrides)
 
     return this.getEffectiveModels(providerId)

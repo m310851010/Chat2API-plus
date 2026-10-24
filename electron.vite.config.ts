@@ -17,7 +17,9 @@ export default defineConfig({
           'mime-types',
           'zstd-codec',
           'electron-store',
-          'electron-updater'
+          'electron-updater',
+          'https-proxy-agent',
+          'socks-proxy-agent'
         ]
       })
     ],

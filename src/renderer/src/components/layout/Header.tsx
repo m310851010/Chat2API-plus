@@ -79,7 +79,7 @@ export function Header() {
         </div>
         <div className="flex flex-col">
           <span className="text-base font-bold text-[var(--text-primary)] leading-tight">
-            Chat2API
+            Chat2API Plus
           </span>
         </div>
       </div>

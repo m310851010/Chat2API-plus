@@ -37,7 +37,7 @@ export interface ToolClientAdapterMeta {
 }
 
 export interface ToolProviderSupportMeta {
-  providerId: 'deepseek' | 'kimi' | 'glm' | 'qwen' | 'mimo'
+  providerId: 'deepseek' | 'kimi' | 'glm' | 'qwen' | 'mimo' | 'chatgpt'
   label: string
   managed: true
   protocolId: 'managed_xml'
@@ -71,6 +71,7 @@ export const P0_TOOL_CLIENT_ADAPTERS: ToolClientAdapterMeta[] = [
 ]
 
 export const P0_TOOL_PROVIDER_SUPPORT: ToolProviderSupportMeta[] = [
+  { providerId: 'chatgpt', label: 'CHATGPT', managed: true, protocolId: 'managed_xml', status: 'supported' },
   { providerId: 'deepseek', label: 'DEEPSEEK', managed: true, protocolId: 'managed_xml', status: 'supported' },
   { providerId: 'kimi', label: 'KIMI', managed: true, protocolId: 'managed_xml', status: 'supported' },
   { providerId: 'glm', label: 'GLM', managed: true, protocolId: 'managed_xml', status: 'supported' },

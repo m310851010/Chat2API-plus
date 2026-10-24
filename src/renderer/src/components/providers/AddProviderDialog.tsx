@@ -18,6 +18,7 @@ import { Check, Plus, ArrowRight, Loader2, ExternalLink, AlertCircle, CheckCircl
 import type { BuiltinProviderConfig, ProviderVendor } from '@/types/electron'
 import { cn } from '@/lib/utils'
 import deepseekIcon from '@/assets/providers/deepseek.svg'
+import chatgptIcon from '@/assets/providers/chatgpt.svg'
 import glmIcon from '@/assets/providers/glm.svg'
 import kimiIcon from '@/assets/providers/kimi.svg'
 import mimoIcon from '@/assets/providers/mimo.svg'
@@ -25,6 +26,9 @@ import minimaxIcon from '@/assets/providers/minimax.svg'
 import perplexityIcon from '@/assets/providers/perplexity.svg'
 import qwenIcon from '@/assets/providers/qwen.svg'
 import zaiIcon from '@/assets/providers/zai.svg'
+import geminiIcon from '@/assets/providers/gemini.svg'
+import grokIcon from '@/assets/providers/grok.svg'
+import { TextWithLinks } from '@/components/providers/TextWithLinks'
 
 interface AddProviderDialogProps {
   open: boolean
@@ -45,6 +49,7 @@ interface AddProviderDialogProps {
 }
 
 const providerIcons: Record<string, string> = {
+  chatgpt: chatgptIcon,
   deepseek: deepseekIcon,
   glm: glmIcon,
   kimi: kimiIcon,
@@ -54,6 +59,8 @@ const providerIcons: Record<string, string> = {
   qwen: qwenIcon,
   'qwen-ai': qwenIcon,
   zai: zaiIcon,
+  gemini: geminiIcon,
+  grok: grokIcon,
 }
 
 function mapOAuthCredentials(providerId: string | undefined, credentials: Record<string, string>): Record<string, string> {
@@ -201,6 +208,43 @@ export function AddProviderDialog({
 
   const DEFAULT_BUILTIN_PROVIDERS: BuiltinProviderConfig[] = [
     {
+      id: 'chatgpt',
+      name: t('chatgpt.name'),
+      type: 'builtin',
+      authType: 'token',
+      apiEndpoint: 'https://chatgpt.com',
+      enabled: true,
+      description: t('chatgpt.description'),
+      supportedModels: ['Auto', 'GPT-5', 'GPT-5-2', 'GPT-5-3', 'GPT-5-3-Mini', 'GPT-5-Mini'],
+      modelMappings: {
+        'Auto': 'auto',
+        'GPT-5': 'gpt-5',
+        'GPT-5-2': 'gpt-5-2',
+        'GPT-5-3': 'gpt-5-3',
+        'GPT-5-3-Mini': 'gpt-5-3-mini',
+        'GPT-5-Mini': 'gpt-5-mini',
+      },
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+        'Origin': 'https://chatgpt.com',
+        'Referer': 'https://chatgpt.com/',
+        'OAI-Language': 'en-US',
+      },
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      credentialFields: [
+        {
+          name: 'token',
+          label: t('chatgpt.accessToken'),
+          type: 'password',
+          required: true,
+          placeholder: t('chatgpt.tokenPlaceholder'),
+          helpText: t('chatgpt.tokenHelp'),
+        },
+      ],
+    },
+    {
       id: 'deepseek',
       name: t('deepseek.name'),
       type: 'builtin',
@@ -302,8 +346,9 @@ export function AddProviderDialog({
       apiEndpoint: 'https://agent.minimaxi.com',
       enabled: true,
       description: t('minimax.description'),
-      supportedModels: ['MiniMax-M2.7'],
+      supportedModels: ['MiniMax-M3', 'MiniMax-M2.7'],
       modelMappings: {
+        'MiniMax-M3': 'MiniMax-M3',
         'MiniMax-M2.7': 'MiniMax-M2.7',
       },
       headers: {
@@ -626,6 +671,13 @@ export function AddProviderDialog({
         {credentialFields.map((field) => {
           const getFieldTranslation = () => {
             const translations: Record<string, Record<string, { label: string; placeholder: string; helpText: string }>> = {
+              chatgpt: {
+                token: {
+                  label: t('chatgpt.accessToken'),
+                  placeholder: t('chatgpt.tokenPlaceholder'),
+                  helpText: t('chatgpt.tokenHelp'),
+                },
+              },
               deepseek: {
                 token: {
                   label: t('deepseek.userToken'),
@@ -707,6 +759,20 @@ export function AddProviderDialog({
                   label: t('perplexity.sessionToken'),
                   placeholder: t('perplexity.sessionTokenPlaceholder'),
                   helpText: t('perplexity.sessionTokenHelp'),
+                },
+              },
+              gemini: {
+                cookie: {
+                  label: t('gemini.cookie'),
+                  placeholder: t('gemini.cookiePlaceholder'),
+                  helpText: t('gemini.cookieHelp'),
+                },
+              },
+              grok: {
+                token: {
+                  label: t('grok.cookie'),
+                  placeholder: t('grok.cookiePlaceholder'),
+                  helpText: t('grok.cookieHelp'),
                 },
               },
             }
@@ -822,7 +888,7 @@ export function AddProviderDialog({
                 />
               )}
               {translated.helpText && (
-                <p className="text-xs text-muted-foreground">{translated.helpText}</p>
+                <TextWithLinks text={translated.helpText} className="text-xs text-muted-foreground" />
               )}
             </div>
           )
@@ -835,9 +901,8 @@ export function AddProviderDialog({
     <Tabs defaultValue="builtin" className="mt-4">
       <TabsList className="grid w-full grid-cols-2">
         <TabsTrigger value="builtin">{t('providers.builtinProviders')}</TabsTrigger>
-        <TabsTrigger value="custom" disabled className="gap-1">
+        <TabsTrigger value="custom" className="gap-1">
           {t('providers.customProviders')}
-          <span className="text-[10px] text-muted-foreground">({t('providers.customProviderNotSupported')})</span>
         </TabsTrigger>
       </TabsList>
 
@@ -1032,12 +1097,12 @@ export function AddProviderDialog({
           </div>
         )}
 
-        {validationResult.valid && validationResult.userInfo && (
+        {validationResult.valid && (
           <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 p-3 rounded-lg mt-4">
             <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
             <div>
               <span className="font-medium">{t('providers.validationSuccess')}</span>
-              {validationResult.userInfo.quota !== undefined && (
+              {validationResult.userInfo?.quota !== undefined && (
                 <span className="ml-2">
                   {t('providers.quota')}: {validationResult.userInfo.used || 0} / {validationResult.userInfo.quota}
                 </span>

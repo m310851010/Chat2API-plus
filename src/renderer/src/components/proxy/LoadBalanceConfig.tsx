@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { useProxyStore, type AccountWeight } from '@/stores/proxyStore'
 import { useToast } from '@/hooks/use-toast'
 import type { LoadBalanceStrategy, Account, Provider } from '@/types/electron'
@@ -29,14 +30,17 @@ export function LoadBalanceConfig({ onConfigChange }: LoadBalanceConfigProps) {
   
   const initialStrategyRef = useRef<LoadBalanceStrategy>(loadBalanceStrategy)
   const initialWeightsRef = useRef<AccountWeight[]>(accountWeights)
-  
+  const initialFailoverRef = useRef<boolean>(false)
+
   const [selectedStrategy, setSelectedStrategy] = useState<LoadBalanceStrategy>(loadBalanceStrategy)
   const [weights, setWeights] = useState<AccountWeight[]>(accountWeights)
+  const [failoverRetry, setFailoverRetry] = useState<boolean>(false)
   const [accounts, setAccounts] = useState<(Account & { provider?: Provider })[]>([])
   const [hasChanges, setHasChanges] = useState(false)
 
   useEffect(() => {
     fetchAccounts()
+    loadFailoverSetting()
   }, [])
 
   useEffect(() => {
@@ -74,6 +78,17 @@ export function LoadBalanceConfig({ onConfigChange }: LoadBalanceConfigProps) {
     }
   }
 
+  const loadFailoverSetting = async () => {
+    try {
+      const config = await window.electronAPI.store.get('config') as { accountFailoverRetry?: boolean } | undefined
+      const enabled = config?.accountFailoverRetry === true
+      setFailoverRetry(enabled)
+      initialFailoverRef.current = enabled
+    } catch (error) {
+      console.error('Failed to load account failover setting:', error)
+    }
+  }
+
   const handleStrategyChange = (value: LoadBalanceStrategy) => {
     setSelectedStrategy(value)
     setHasChanges(true)
@@ -88,12 +103,19 @@ export function LoadBalanceConfig({ onConfigChange }: LoadBalanceConfigProps) {
     onConfigChange?.()
   }
 
+  const handleFailoverChange = (checked: boolean) => {
+    setFailoverRetry(checked)
+    setHasChanges(true)
+    onConfigChange?.()
+  }
+
   const handleSave = async () => {
     setLoadBalanceStrategy(selectedStrategy)
     setAccountWeights(weights)
-    
+
     const success = await saveAppConfig({
       loadBalanceStrategy: selectedStrategy,
+      accountFailoverRetry: failoverRetry,
     })
 
     if (success) {
@@ -114,6 +136,7 @@ export function LoadBalanceConfig({ onConfigChange }: LoadBalanceConfigProps) {
   const handleReset = () => {
     setSelectedStrategy(initialStrategyRef.current)
     setWeights(initialWeightsRef.current)
+    setFailoverRetry(initialFailoverRef.current)
     setHasChanges(false)
   }
 
@@ -174,6 +197,21 @@ export function LoadBalanceConfig({ onConfigChange }: LoadBalanceConfigProps) {
               {getStrategyDescription(selectedStrategy)}
             </p>
           </div>
+        </div>
+
+        <div className="flex items-start justify-between gap-4 pt-4 border-t">
+          <div className="space-y-1">
+            <Label htmlFor="account-failover">{t('proxy.accountFailoverRetry')}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t('proxy.accountFailoverRetryDesc')}
+            </p>
+          </div>
+          <Switch
+            id="account-failover"
+            checked={failoverRetry}
+            onCheckedChange={handleFailoverChange}
+            disabled={isLoading}
+          />
         </div>
 
         {activeAccounts.length > 0 && (

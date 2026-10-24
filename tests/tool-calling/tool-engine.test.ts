@@ -173,3 +173,28 @@ test('non-stream parsing only accepts the selected provider protocol', () => {
   assert.equal(result.choices[0].message.tool_calls, undefined)
   assert.equal(result.choices[0].message.content, '[function_calls][call:default_api:read_file]{"filePath":"/tmp/a"}[/call][/function_calls]')
 })
+
+test('non-stream managed xml tool calls do not leak rawText markers', () => {
+  const engine = new ToolCallingEngine()
+  const transformed = engine.transformRequest({
+    request: request(),
+    provider,
+    actualModel: 'deepseek-chat',
+  })
+  const result: any = {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: '<|CHAT2API|tool_calls><|CHAT2API|invoke name="default_api:read_file"><|CHAT2API|parameter name="filePath"><![CDATA[/tmp/a]]></|CHAT2API|parameter></|CHAT2API|invoke></|CHAT2API|tool_calls>',
+      },
+      finish_reason: 'stop',
+    }],
+  }
+
+  engine.applyNonStreamResponse(result, transformed.plan)
+
+  const call = result.choices[0].message.tool_calls[0]
+  assert.equal(call.function.name, 'default_api:read_file')
+  assert.equal('rawText' in call, false)
+  assert.doesNotMatch(JSON.stringify(result), /CHAT2API/)
+})

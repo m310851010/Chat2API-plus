@@ -14,13 +14,18 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { ExternalLink, Loader2, Check, Copy, AlertCircle } from 'lucide-react'
 import type { BuiltinProviderConfig } from '@/types/electron'
 import deepseekIcon from '@/assets/providers/deepseek.svg'
+import chatgptIcon from '@/assets/providers/chatgpt.svg'
 import glmIcon from '@/assets/providers/glm.svg'
 import kimiIcon from '@/assets/providers/kimi.svg'
 import minimaxIcon from '@/assets/providers/minimax.svg'
 import qwenIcon from '@/assets/providers/qwen.svg'
 import zaiIcon from '@/assets/providers/zai.svg'
+import geminiIcon from '@/assets/providers/gemini.svg'
+import grokIcon from '@/assets/providers/grok.svg'
+import { TextWithLinks } from '@/components/providers/TextWithLinks'
 
 const providerIcons: Record<string, string> = {
+  chatgpt: chatgptIcon,
   deepseek: deepseekIcon,
   glm: glmIcon,
   kimi: kimiIcon,
@@ -28,6 +33,8 @@ const providerIcons: Record<string, string> = {
   qwen: qwenIcon,
   'qwen-ai': qwenIcon,
   zai: zaiIcon,
+  gemini: geminiIcon,
+  grok: grokIcon,
 }
 
 interface LoginGuideDialogProps {
@@ -322,7 +329,7 @@ export function LoginGuideDialog({
                   onChange={(e) => handleCredentialChange(field.name, e.target.value)}
                 />
                 {field.helpText && (
-                  <p className="text-xs text-muted-foreground">{field.helpText}</p>
+                  <TextWithLinks text={field.helpText} className="text-xs text-muted-foreground" />
                 )}
               </div>
             ))}

@@ -26,6 +26,7 @@ import { Search, Copy, CheckCircle2, XCircle, Cpu, Check, Square, Database, Chev
 import { cn } from '@/lib/utils'
 import type { Account, EffectiveModel } from '@/types/electron'
 import deepseekIcon from '@/assets/providers/deepseek.svg'
+import chatgptIcon from '@/assets/providers/chatgpt.svg'
 import glmIcon from '@/assets/providers/glm.svg'
 import kimiIcon from '@/assets/providers/kimi.svg'
 import minimaxIcon from '@/assets/providers/minimax.svg'
@@ -33,9 +34,12 @@ import mimoIcon from '@/assets/providers/mimo.svg'
 import perplexityIcon from '@/assets/providers/perplexity.svg'
 import qwenIcon from '@/assets/providers/qwen.svg'
 import zaiIcon from '@/assets/providers/zai.svg'
+import geminiIcon from '@/assets/providers/gemini.svg'
+import grokIcon from '@/assets/providers/grok.svg'
 import modelMappingIcon from '@/assets/providers/model-mapping.svg'
 
 const providerIcons: Record<string, string> = {
+  chatgpt: chatgptIcon,
   deepseek: deepseekIcon,
   glm: glmIcon,
   kimi: kimiIcon,
@@ -45,6 +49,8 @@ const providerIcons: Record<string, string> = {
   qwen: qwenIcon,
   'qwen-ai': qwenIcon,
   zai: zaiIcon,
+  gemini: geminiIcon,
+  grok: grokIcon,
   mapping: modelMappingIcon,
 }
 

@@ -205,7 +205,7 @@ export function About() {
     {
       label: t('about.github'),
       icon: Github,
-      url: 'https://github.com/xiaoY233/Chat2API',
+      url: 'https://github.com/m310851010/Chat2API-plus',
     },
     {
       label: t('about.documentation'),
@@ -215,7 +215,7 @@ export function About() {
     {
       label: t('about.reportIssue'),
       icon: Bug,
-      url: 'https://github.com/xiaoY233/Chat2API/issues',
+      url: 'https://github.com/m310851010/Chat2API-plus/issues',
     },
   ]
 

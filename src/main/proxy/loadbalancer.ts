@@ -55,14 +55,21 @@ export class LoadBalancer {
    * @param strategy Load balance strategy
    * @param preferredProviderId Preferred provider ID
    * @param preferredAccountId Preferred account ID
+   * @param excludeAccountIds Account IDs to exclude from selection
    */
   selectAccount(
     model: string,
     strategy: LoadBalanceStrategy = 'round-robin',
     preferredProviderId?: string,
-    preferredAccountId?: string
+    preferredAccountId?: string,
+    excludeAccountIds?: string[]
   ): AccountSelection | null {
-    const candidates = this.getAvailableAccounts(model, preferredProviderId, strategy === 'failover')
+    const candidates = this.getAvailableAccounts(
+      model,
+      preferredProviderId,
+      strategy === 'failover',
+      excludeAccountIds
+    )
 
     if (candidates.length === 0) {
       return null
@@ -92,10 +99,12 @@ export class LoadBalancer {
   private getAvailableAccounts(
     model: string,
     preferredProviderId?: string,
-    excludeFailed: boolean = false
+    excludeFailed: boolean = false,
+    excludeAccountIds?: string[]
   ): AccountSelection[] {
     const providers = storeManager.getProviders().filter(p => p.enabled)
     const candidates: AccountSelection[] = []
+    const excluded = new Set(excludeAccountIds || [])
 
     for (const provider of providers) {
       if (preferredProviderId && provider.id !== preferredProviderId) {
@@ -109,6 +118,7 @@ export class LoadBalancer {
       const accounts = storeManager.getAccountsByProviderId(provider.id, true)
         .filter(account => this.isAccountAvailable(account))
         .filter(account => !excludeFailed || !this.isAccountInFailure(account.id))
+        .filter(account => !excluded.has(account.id))
 
       console.log(`[LoadBalancer] Provider ${provider.name} (${provider.id}) has ${accounts.length} available accounts`)
 

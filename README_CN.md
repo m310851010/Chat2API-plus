@@ -1,7 +1,7 @@
-# Chat2API
+﻿# Chat2API Plus
 
 <p align="center">
-  <img src="build/icons.png" alt="Chat2API Logo" width="128" height="128">
+  <img src="build/icons.png" alt="Chat2API Plus Logo" width="128" height="128">
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  Chat2API 通过驱动各大模型的官方 Web UI，实现 0 成本接入主流 AI 大模型。支持 DeepSeek、GLM、Kimi、MiniMax、Qwen、Z.ai 等渠道，可无缝连接 openlcaw、Cline、Roo-Code 等工具，让任何 OpenAI 兼容客户端即刻可用。
+  Chat2API Plus 通过驱动各大模型的官方 Web UI，实现 0 成本接入主流 AI 大模型。支持 DeepSeek、GLM、Kimi、MiniMax、Qwen、Z.ai 等渠道，可无缝连接 openlcaw、Cline、Roo-Code 等工具，让任何 OpenAI 兼容客户端即刻可用。
 </p>
 
 ![Product Preview](docs/screenshots/preview.png)
@@ -49,10 +49,13 @@
 
 | 服务商           | 认证类型          | OAuth | 模型                                                                                                                                                                                                                                            |
 | ------------- | ------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ChatGPT       | Access Token  | 是     | auto, gpt-5, gpt-5-1, gpt-5-2, gpt-5-3, gpt-5-3-mini, gpt-5-mini                                                                                                                                                                              |
 | DeepSeek      | User Token    | 是     | deepseek-v4-flash, deepseek-v4-pro                                                                                                                                                                                                            |
+| Gemini        | Cookie        | 是     | gemini-3.7-flash, gemini-3.6-flash, gemini-3.5-flash, gemini-3.5-flash-thinking, gemini-3.5-flash-thinking-lite, gemini-3.1-pro, gemini-auto, gemini-flash-lite                                                                                |
 | GLM           | Refresh Token | 是     | GLM-5.1                                                                                                                                                                                                                                       |
+| Grok          | Cookie        | 是     | grok-4, grok-4-fast, grok-3, grok-3-mini, grok-auto                                                                                                                                                                                           |
 | Kimi          | JWT Token     | 是     | Kimi-K2.6                                                                                                                                                                                                                                     |
-| MiniMax       | JWT Token     | 是     | MiniMax-M2.7                                                                                                                                                                                                                                  |
+| MiniMax       | JWT Token     | 是     | MiniMax-M3, MiniMax-M2.7                                                                                                                                                                                                                      |
 | Mimo          | Cookie        | 是     | MiMo-V2.5-Pro, MiMo-V2.5, MiMo-V2-Flash                                                                                                                                                                                                       |
 | Perplexity    | Cookie        | 是     | Auto                                                                                                                                                                                                                                         |
 | Qwen (国内版)    | SSO Ticket    | 是     | Qwen3.6, Qwen3.7-Max, Qwen3.5-Flash, Qwen3-Max, Qwen3-Max-Thinking-Preview, Qwen3-Coder                                                                                                                                                       |
@@ -65,14 +68,14 @@
 
 ### 下载安装
 
-从 [GitHub Releases](https://github.com/xiaoY233/Chat2API/releases) 下载最新版本：
+从 [GitHub Releases](https://github.com/m310851010/Chat2API-plus/releases) 下载最新版本：
 
 | 平台                    | 下载文件                                   |
 | --------------------- | -------------------------------------- |
-| macOS (Apple Silicon) | `Chat2API-x.x.x-arm64.dmg`             |
-| macOS (Intel)         | `Chat2API-x.x.x-x64.dmg`               |
-| Windows               | `Chat2API-x.x.x-x64-setup.exe`         |
-| Linux                 | `Chat2API-x.x.x-x64.AppImage` 或 `.deb` |
+| macOS (Apple Silicon) | `Chat2API Plus-x.x.x-arm64.dmg`             |
+| macOS (Intel)         | `Chat2API Plus-x.x.x-x64.dmg`               |
+| Windows               | `Chat2API Plus-x.x.x-x64-setup.exe`         |
+| Linux                 | `Chat2API Plus-x.x.x-x64.AppImage` 或 `.deb` |
 
 ### 从源码构建
 
@@ -84,8 +87,8 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/xiaoY233/Chat2API.git
-cd Chat2API
+git clone https://github.com/m310851010/Chat2API-plus.git
+cd Chat2API-plus
 
 # 安装依赖
 npm install
@@ -108,7 +111,7 @@ npm run build:all          # 构建所有平台
 
 ### 步骤 1：启动应用
 
-安装完成后，启动 Chat2API。您将看到主仪表盘。
+安装完成后，启动 Chat2API Plus。您将看到主仪表盘。
 
 ### 步骤 2：添加供应商
 
@@ -191,7 +194,7 @@ print(response.choices[0].message.content)
 ## 🏗️ 项目结构
 
 ```
-Chat2API/
+Chat2API-plus/
 ├── src/
 │   ├── main/                    # Electron 主进程
 │   │   ├── index.ts            # 应用入口
@@ -237,12 +240,12 @@ Chat2API/
 由于 macOS 的安全机制，非 App Store 下载的应用可能会触发此提示。运行以下命令即可修复：
 
 ```bash
-sudo xattr -rd com.apple.quarantine "/Applications/Chat2API.app"
+sudo xattr -rd com.apple.quarantine "/Applications/Chat2API Plus.app"
 ```
 
 ### 如何更新？
 
-在 **关于** 页面检查更新，或从 [GitHub Releases](https://github.com/xiaoY233/Chat2API/releases) 下载最新版本。
+在 **关于** 页面检查更新，或从 [GitHub Releases](https://github.com/m310851010/Chat2API-plus/releases) 下载最新版本。
 
 ## 🤝 贡献
 

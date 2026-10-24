@@ -5,7 +5,7 @@ export type ProviderStatus = 'online' | 'offline' | 'unknown'
 export type ProviderType = 'builtin' | 'custom'
 
 // Provider vendor type (for OAuth adapters)
-export type ProviderVendor = 'deepseek' | 'glm' | 'kimi' | 'mimo' | 'minimax' | 'qwen' | 'qwen-ai' | 'zai' | 'perplexity' | 'custom'
+export type ProviderVendor = 'chatgpt' | 'deepseek' | 'gemini' | 'glm' | 'grok' | 'kimi' | 'mimo' | 'minimax' | 'qwen' | 'qwen-ai' | 'zai' | 'perplexity' | 'custom'
 
 export type AuthType = 
   | 'oauth' 
@@ -66,6 +66,8 @@ export interface Provider {
   icon?: string
   supportedModels?: string[]
   modelMappings?: Record<string, string>
+  /** Timestamp of last successful dynamic model fetch; when set, startup sync keeps the fetched list */
+  modelsFetchedAt?: number
   status?: ProviderStatus
   lastStatusCheck?: number
 }
@@ -105,6 +107,8 @@ export interface AppConfig {
   apiKeys: ApiKey[]
   enableApiKey: boolean
   oauthProxyMode: 'system' | 'none'
+  /** Outbound API proxy URL for provider requests (http/https/socks5), empty = direct */
+  apiProxyUrl?: string
   sessionConfig: SessionConfig
   toolCallingConfig: ToolCallingConfig
   toolPromptConfig?: LegacyToolPromptConfig
@@ -362,6 +366,7 @@ export interface ConfigUpdateRequest {
   retryCount?: number
   enableApiKey?: boolean
   oauthProxyMode?: 'system' | 'none'
+  apiProxyUrl?: string
   sessionConfig?: SessionConfig
   toolCallingConfig?: Partial<ToolCallingConfig>
   toolPromptConfig?: LegacyToolPromptConfig

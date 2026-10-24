@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -22,6 +23,8 @@ export function GeneralSettings() {
     setEnableNotifications,
     oauthProxyMode,
     setOauthProxyMode,
+    apiProxyUrl,
+    setApiProxyUrl,
   } = useSettingsStore()
 
   return (
@@ -149,6 +152,20 @@ export function GeneralSettings() {
                 <SelectItem value="none">{t('settings.oauthProxyNone')}</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <Separator />
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="api-proxy-url">{t('settings.apiProxyUrl')}</Label>
+              <p className="text-sm text-muted-foreground">{t('settings.apiProxyUrlHelp')}</p>
+            </div>
+            <Input
+              id="api-proxy-url"
+              className="w-[280px]"
+              placeholder={t('settings.apiProxyUrlPlaceholder')}
+              value={apiProxyUrl}
+              onChange={(e) => setApiProxyUrl(e.target.value)}
+            />
           </div>
         </CardContent>
       </Card>

@@ -31,6 +31,7 @@ export const IpcChannels = {
   PROVIDERS_UPDATE_MODELS: 'providers:updateModels',
   PROVIDERS_GET_EFFECTIVE_MODELS: 'providers:getEffectiveModels',
   PROVIDERS_ADD_CUSTOM_MODEL: 'providers:addCustomModel',
+  PROVIDERS_UPDATE_MODEL: 'providers:updateModel',
   PROVIDERS_REMOVE_MODEL: 'providers:removeModel',
   PROVIDERS_RESET_MODELS: 'providers:resetModels',
 
@@ -93,6 +94,7 @@ export const IpcChannels = {
   APP_SHOW_WINDOW: 'app:showWindow',
   APP_HIDE_WINDOW: 'app:hideWindow',
   APP_OPEN_EXTERNAL: 'app:openExternal',
+  APP_SAVE_TEXT_FILE: 'app:saveTextFile',
 
   PROMPTS_GET_ALL: 'prompts:getAll',
   PROMPTS_GET_BUILTIN: 'prompts:getBuiltin',
@@ -120,6 +122,8 @@ export const IpcChannels = {
 
   CONTEXT_MANAGEMENT_GET_CONFIG: 'contextManagement:getConfig',
   CONTEXT_MANAGEMENT_UPDATE_CONFIG: 'contextManagement:updateConfig',
+
+  TOOL_CALLING_RUN_SMOKE: 'tool-calling:runSmoke',
 } as const
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]

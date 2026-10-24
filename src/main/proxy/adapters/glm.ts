@@ -701,6 +701,15 @@ GLM STRICT RULES:
   }
 }
 
+function mergeStreamValue(previous: string, incoming: string): string {
+  if (!incoming) return previous
+  if (!previous) return incoming
+  if (incoming === previous) return previous
+  if (incoming.startsWith(previous)) return incoming
+  if (previous.startsWith(incoming)) return previous
+  return previous + incoming
+}
+
 export class GLMStreamHandler {
   private conversationId: string = ''
   private model: string
@@ -723,6 +732,8 @@ export class GLMStreamHandler {
   async handleStream(stream: any): Promise<PassThrough> {
     const transStream = new PassThrough()
     const cachedParts: any[] = []
+    const textAccumulators = new Map<string, string>()
+    const thinkAccumulators = new Map<string, string>()
     let sentContent = ''
     let sentReasoning = ''
     let sentRole = false
@@ -785,11 +796,14 @@ export class GLMStreamHandler {
               let partText = ''
               let partReasoning = ''
 
-              content.forEach((value: any) => {
+              content.forEach((value: any, itemIndex: number) => {
                 const { type, text, think, image, code, content: innerContent } = value
 
                 if (type === 'text') {
-                  let txt = text
+                  const accKey = `${part.logic_id}:${itemIndex}:text`
+                  const merged = mergeStreamValue(textAccumulators.get(accKey) ?? '', typeof text === 'string' ? text : '')
+                  textAccumulators.set(accKey, merged)
+                  let txt = merged
                   if (searchMap.size > 0) {
                     txt = txt.replace(/【?(turn\d+[a-zA-Z]+\d+)】?/g, (match: string, key: string) => {
                       const searchInfo = searchMap.get(key)
@@ -802,7 +816,10 @@ export class GLMStreamHandler {
                   }
                   partText += txt
                 } else if (type === 'think') {
-                  partReasoning += think
+                  const accKey = `${part.logic_id}:${itemIndex}:think`
+                  const merged = mergeStreamValue(thinkAccumulators.get(accKey) ?? '', typeof think === 'string' ? think : '')
+                  thinkAccumulators.set(accKey, merged)
+                  partReasoning += merged
                 } else if (type === 'image' && Array.isArray(image) && part.status === 'finish') {
                   const imageText =
                     image.reduce((imgs: string, v: any) => {
@@ -810,7 +827,10 @@ export class GLMStreamHandler {
                     }, '') + '\n'
                   partText += imageText
                 } else if (type === 'code') {
-                  partText += '```python\n' + code + (part.status === 'finish' ? '\n```\n' : '')
+                  const accKey = `${part.logic_id}:${itemIndex}:code`
+                  const merged = mergeStreamValue(textAccumulators.get(accKey) ?? '', typeof code === 'string' ? code : '')
+                  textAccumulators.set(accKey, merged)
+                  partText += '```python\n' + merged + (part.status === 'finish' ? '\n```\n' : '')
                 } else if (type === 'execution_output' && typeof innerContent === 'string' && part.status === 'finish') {
                   partText += innerContent + '\n'
                 }
@@ -820,25 +840,35 @@ export class GLMStreamHandler {
               if (partReasoning) fullReasoning += (fullReasoning.length > 0 ? '\n' : '') + partReasoning
             })
 
-            const reasoningChunk = fullReasoning.substring(sentReasoning.length)
-            if (reasoningChunk) {
-              sentReasoning += reasoningChunk
+            const reasoningDelta = fullReasoning.startsWith(sentReasoning) ? fullReasoning.slice(sentReasoning.length) : ''
+            if (reasoningDelta) {
+              sentReasoning = fullReasoning
               transStream.write(
                 `data: ${JSON.stringify({
                   id: this.conversationId,
                   model: this.model,
                   object: 'chat.completion.chunk',
-                  choices: [{ index: 0, delta: { reasoning_content: reasoningChunk }, finish_reason: null }],
+                  choices: [{ index: 0, delta: { reasoning_content: reasoningDelta }, finish_reason: null }],
                   created: this.created,
                 })}\n\n`
               )
             }
 
-            const chunk = fullText.substring(sentContent.length)
+            const chunk = fullText.startsWith(sentContent) ? fullText.slice(sentContent.length) : ''
             if (chunk) {
-              sentContent += chunk
+              sentContent = fullText
             }
-            
+
+            if (process.env.C2A_GLM_DEBUG === '1') {
+              const rawParts = cachedParts.map((p) => ({
+                logic_id: p.logic_id,
+                status: p.status,
+                content: (p.content || []).map((c: any) => ({ type: c.type, text: c.text?.slice(0, 120), think: c.think?.slice(0, 80) })),
+              }))
+              console.log('[GLM-DEBUG] sentLen=', sentContent.length, 'fullLen=', fullText.length, 'chunk=', JSON.stringify(chunk).slice(0, 200))
+              console.log('[GLM-DEBUG] parts=', JSON.stringify(rawParts).slice(0, 2000))
+            }
+
             // Process tool call interception with shared parser buffering.
             const baseChunk = createBaseChunk(this.conversationId, this.model, this.created)
             const outputChunks = this.toolStreamParser?.push(chunk, baseChunk, !sentRole) ?? (

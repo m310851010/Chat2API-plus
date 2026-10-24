@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CheckCircle2, FlaskConical, Settings2, Wrench, XCircle } from 'lucide-react'
+import { CheckCircle2, FlaskConical, Settings2, Wrench, X, XCircle } from 'lucide-react'
 import {
   DEFAULT_TOOL_CALLING_CONFIG,
   P0_TOOL_CLIENT_ADAPTERS,
@@ -38,6 +38,7 @@ export function ToolCallingPanel() {
   const { t } = useTranslation()
   const { appConfig, saveAppConfig } = useProxyStore()
   const [smokeStatus, setSmokeStatus] = useState<'not_run' | 'running' | 'pass' | 'failed'>('not_run')
+  const [smokeError, setSmokeError] = useState<string | null>(null)
   const config = appConfig?.toolCallingConfig ?? DEFAULT_TOOL_CALLING_CONFIG
   const clientAdapters = P0_TOOL_CLIENT_ADAPTERS.filter(
     (adapter) => adapter.id === 'standard-openai-tools' || adapter.id === 'cherry-studio-mcp',
@@ -55,13 +56,20 @@ export function ToolCallingPanel() {
 
   const runSmoke = async () => {
     setSmokeStatus('running')
+    setSmokeError(null)
     try {
       const result = await window.electronAPI?.toolCalling?.runSmoke?.({
         clientAdapterId: config.clientAdapterId,
       })
-      setSmokeStatus(result?.success ? 'pass' : 'failed')
-    } catch {
+      if (result?.success) {
+        setSmokeStatus('pass')
+      } else {
+        setSmokeStatus('failed')
+        setSmokeError(result?.error?.message ?? t('toolCalling.smoke.unknownError'))
+      }
+    } catch (error) {
       setSmokeStatus('failed')
+      setSmokeError(error instanceof Error ? error.message : t('toolCalling.smoke.unknownError'))
     }
   }
 
@@ -145,13 +153,16 @@ export function ToolCallingPanel() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+          <div className="relative flex items-center justify-between gap-3 rounded-md border p-3">
             <div>
               <Label>{t('toolCalling.smoke.title')}</Label>
               <p className="text-xs text-muted-foreground">{t('toolCalling.smoke.description')}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant={smokeStatus === 'pass' ? 'default' : 'outline'}>
+              <Badge
+                variant={smokeStatus === 'pass' ? 'default' : 'outline'}
+                className={smokeStatus === 'failed' ? 'border-destructive text-destructive' : undefined}
+              >
                 {t(`toolCalling.smoke.${smokeStatus}`)}
               </Badge>
               <Button variant="outline" size="sm" onClick={runSmoke} disabled={smokeStatus === 'running'}>
@@ -159,6 +170,31 @@ export function ToolCallingPanel() {
                 {t('toolCalling.smoke.run')}
               </Button>
             </div>
+            {smokeStatus === 'failed' && smokeError && (
+              <div
+                role="alert"
+                className="absolute right-3 top-[calc(100%+8px)] z-50 w-[340px] rounded-md border border-destructive/50 bg-popover p-3 text-xs shadow-lg"
+              >
+                <div className="absolute -top-2 right-8 h-4 w-4 rotate-45 border-l border-t border-destructive/50 bg-popover" />
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 font-medium text-destructive">
+                    <XCircle className="h-3.5 w-3.5" />
+                    {t('toolCalling.smoke.errorLogTitle')}
+                  </span>
+                  <button
+                    type="button"
+                    className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    onClick={() => setSmokeError(null)}
+                    aria-label={t('toolCalling.smoke.dismissError')}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-foreground/90">
+                  {smokeError}
+                </pre>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

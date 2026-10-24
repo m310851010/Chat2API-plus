@@ -112,6 +112,11 @@ interface ProvidersAPI {
     models: EffectiveModel[]
     error?: string
   }>
+  updateModel: (providerId: string, originalName: string, model: { displayName: string; actualModelId: string }) => Promise<{
+    success: boolean
+    models: EffectiveModel[]
+    error?: string
+  }>
   removeModel: (providerId: string, modelName: string) => Promise<{
     success: boolean
     models: EffectiveModel[]
@@ -270,6 +275,7 @@ interface AppAPI {
   showWindow: () => Promise<void>
   hideWindow: () => Promise<void>
   openExternal: (url: string) => Promise<void>
+  saveTextFile: (fileName: string, content: string) => Promise<string | null>
 }
 
 interface ConfigAPI {
@@ -459,7 +465,17 @@ interface ContextManagementAPI {
 
 interface ToolCallingAPI {
   getStatus: () => Promise<unknown>
-  runSmoke: (input: { clientAdapterId: string }) => Promise<{ success: boolean; data?: unknown; error?: { message?: string } }>
+  runSmoke: (input: { clientAdapterId: string }) => Promise<{
+    success: boolean
+    data?: {
+      result?: {
+        success?: boolean
+        message?: string
+      }
+      fixture?: unknown
+    }
+    error?: { message?: string }
+  }>
 }
 
 interface ElectronAPI {

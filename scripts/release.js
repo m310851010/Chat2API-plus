@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 
 const { execSync } = require('child_process');
 const fs = require('fs');
@@ -36,7 +36,7 @@ function validateVersion(version) {
 
 async function main() {
   console.log('='.repeat(50));
-  console.log('Chat2API Release Script');
+  console.log('Chat2API Plus Release Script');
   console.log('='.repeat(50));
   console.log(`\nCurrent version: ${pkg.version}`);
 
@@ -121,7 +121,7 @@ async function main() {
   console.log('Release process initiated!');
   console.log('='.repeat(50));
   console.log('\nGitHub Actions will now build and publish the release.');
-  console.log('Check progress at: https://github.com/chat2api/Chat2API-Manager/actions');
+  console.log('Check progress at: https://github.com/m310851010/Chat2API-plus/actions');
 }
 
 main().catch(console.error);

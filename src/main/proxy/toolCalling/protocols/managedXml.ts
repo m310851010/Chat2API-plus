@@ -26,11 +26,11 @@ Use only the exact tool names listed below. Do not rename, camelCase, translate,
 
 ${renderToolList(tools)}
 
-When calling tools, respond with only this Chat2API XML block:
+When calling tools, respond with only this Chat2API Plus XML block:
 
 <|CHAT2API|tool_calls><|CHAT2API|invoke name="exact_tool_name"><|CHAT2API|parameter name="argument"><![CDATA[value]]></|CHAT2API|parameter></|CHAT2API|invoke></|CHAT2API|tool_calls>
 
-Tool results will be provided as Chat2API XML result blocks:
+Tool results will be provided as Chat2API Plus XML result blocks:
 
 <|CHAT2API|tool_result tool_call_id="call_id"><![CDATA[result]]></|CHAT2API|tool_result>`
   },
@@ -66,9 +66,13 @@ Tool results will be provided as Chat2API XML result blocks:
       toolCalls,
     })
 
+    const cleanContent = rawMatches.length > 0
+      ? rawMatches.reduce((acc, raw) => acc.replace(raw, ''), parseable).trim()
+      : content
+
     if (toolCalls.length === 0) {
       return createParseResult({
-        content,
+        content: cleanContent,
         toolCalls,
         protocol: rawMatches.length > 0 ? 'managed_xml' : 'unknown',
         rawMatches,
@@ -76,7 +80,6 @@ Tool results will be provided as Chat2API XML result blocks:
       })
     }
 
-    const cleanContent = rawMatches.reduce((acc, raw) => acc.replace(raw, ''), parseable).trim()
     return createParseResult({
       content: cleanContent,
       toolCalls,

@@ -99,7 +99,7 @@ test('DeepSeek persisted model overrides are migrated away from old built-in ali
 
   assert.match(storeSource, /p\.id === 'deepseek'/)
   assert.match(storeSource, /sanitizeDeepSeekModelOverrides/)
-  assert.match(storeSource, /const shouldUseBuiltinModels = p\.id === 'deepseek' \|\| !hasUserOverrides/)
+  assert.match(storeSource, /const shouldUseBuiltinModels = \(p\.id === 'deepseek' \|\| !hasUserOverrides\) && !hasDynamicModels/)
 })
 
 test('DeepSeek feature aliases are seeded as global model mappings', () => {
@@ -184,8 +184,9 @@ test('GLM, Kimi, and MiniMax built-in default models match current web providers
   assert.equal(kimiConfig.modelMappings?.['Kimi-K2.6'], 'kimi-k2.6')
   assert.equal(kimiConfig.modelMappings?.['Kimi-K2.5'], undefined)
 
-  assert.deepEqual(minimaxConfig.supportedModels, ['MiniMax-M2.7'])
+  assert.deepEqual(minimaxConfig.supportedModels, ['MiniMax-M3', 'MiniMax-M2.7'])
   assert.deepEqual(minimaxConfig.modelMappings, {
+    'MiniMax-M3': 'MiniMax-M3',
     'MiniMax-M2.7': 'MiniMax-M2.7',
   })
 
@@ -492,7 +493,7 @@ test('Add provider dialog templates match the updated built-in provider flows', 
   assert.match(source, /supportedModels: \['Kimi-K2\.6'\]/)
   assert.match(source, /'Kimi-K2\.6': 'kimi-k2\.6'/)
   assert.doesNotMatch(source, /'Kimi-K2\.5': 'kimi-k2\.5'/)
-  assert.match(source, /supportedModels: \['MiniMax-M2\.7'\]/)
+  assert.match(source, /supportedModels: \['MiniMax-M3', 'MiniMax-M2\.7'\]/)
   assert.match(source, /'MiniMax-M2\.7': 'MiniMax-M2\.7'/)
   assert.match(source, /'Content-Type': 'application\/connect\+json'/)
   assert.doesNotMatch(source, /supportedModels: \['kimi', 'kimi-search', 'kimi-research', 'kimi-k1'\]/)
