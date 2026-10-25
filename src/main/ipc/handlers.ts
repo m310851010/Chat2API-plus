@@ -274,9 +274,11 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
     type?: 'builtin' | 'custom'
     authType: AuthType
     apiEndpoint: string
+    chatPath?: string
     headers?: Record<string, string>
     description?: string
     supportedModels?: string[]
+    modelMappings?: Record<string, string>
     credentialFields?: CredentialField[]
   }): Promise<Provider> => {
     return CustomProviderManager.create(data)

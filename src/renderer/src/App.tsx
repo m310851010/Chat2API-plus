@@ -4,6 +4,7 @@ import { MainLayout } from '@/components/layout/MainLayout'
 import { TrayView } from '@/components/Tray/TrayView'
 import { Toaster } from '@/components/ui/toaster'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useBodyPointerEventsGuard } from '@/hooks/useBodyPointerEventsGuard'
 
 const Dashboard = lazy(() => import('@/pages/Dashboard').then(m => ({ default: m.Dashboard })))
 const Chat = lazy(() => import('@/pages/Chat').then(m => ({ default: m.Chat })))
@@ -30,6 +31,8 @@ function PageLoader() {
 }
 
 function App() {
+  useBodyPointerEventsGuard()
+
   return (
     <>
       <Routes>

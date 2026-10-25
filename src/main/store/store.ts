@@ -43,6 +43,10 @@ import { normalizeToolCallingConfig } from '../../shared/toolCalling'
 import { AppLogManager } from '../appLogs/manager'
 import type { AppLogFilter } from '../appLogs/types'
 
+// Dynamically fetched model lists older than this are treated as stale on
+// startup and the built-in list is re-applied (see initializeDefaultProviders)
+const DYNAMIC_MODELS_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
 // Dynamically import electron-store (ESM module)
 let Store: any = null
 
@@ -311,13 +315,26 @@ class StoreManager {
           const hasUserOverrides = userModelOverrides[p.id] &&
             ((userModelOverrides[p.id].addedModels && userModelOverrides[p.id].addedModels.length > 0) ||
              (userModelOverrides[p.id].excludedModels && userModelOverrides[p.id].excludedModels.length > 0))
-          const hasDynamicModels = typeof p.modelsFetchedAt === 'number' && p.modelsFetchedAt > 0
+          // Dynamic model lists older than a day are stale — the refresh
+          // service could not reach upstream again (expired account etc.), so
+          // re-apply the built-in list instead of freezing the last successful
+          // fetch forever.
+          const hasDynamicModels =
+            typeof p.modelsFetchedAt === 'number' &&
+            p.modelsFetchedAt > 0 &&
+            Date.now() - p.modelsFetchedAt < DYNAMIC_MODELS_MAX_AGE_MS
           const shouldUseBuiltinModels = (p.id === 'deepseek' || !hasUserOverrides) && !hasDynamicModels
           
-          return { 
-            ...p, 
+          return {
+            ...p,
             apiEndpoint: builtinConfig.apiEndpoint,
             chatPath: builtinConfig.chatPath,
+            authType: builtinConfig.authType,
+            // Credential fields are part of the built-in definition (e.g. Mimo
+            // moved from three split fields to a single cookie field); without
+            // re-applying them here, stale fields from an older persisted
+            // config would keep rendering in the UI and failing validation.
+            credentialFields: builtinConfig.credentialFields,
             supportedModels: shouldUseBuiltinModels ? builtinConfig.supportedModels : p.supportedModels,
             modelMappings: shouldUseBuiltinModels ? builtinConfig.modelMappings : p.modelMappings,
             headers: builtinConfig.headers,

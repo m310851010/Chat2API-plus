@@ -436,12 +436,29 @@ router.post('/completions', async (ctx: Context) => {
       // Check if stream is already in correct SSE format (from adapters like Kimi, GLM, DeepSeek)
       if (result.skipTransform) {
         // Stream is already formatted, pipe through wrapper and collect
+        let wrapperClosed = false
         result.stream.on('data', (chunk: Buffer) => {
-          collectedContent += chunk.toString()
+          if (!wrapperClosed) collectedContent += chunk.toString()
+        })
+
+        const closeWrapper = () => {
+          if (wrapperClosed) return
+          wrapperClosed = true
+          wrapperStream.end()
+        }
+
+        wrapperStream.on('error', () => {
+          // Client went away or the wrapper already ended; stop feeding it
+          wrapperClosed = true
+          ;(result.stream as any).destroy?.()
         })
 
         result.stream.on('error', (err: Error) => {
           console.error('[Chat] SkipTransform stream error:', err.message)
+          if (wrapperClosed) return
+          // Terminal failure: surface it, end the client response cleanly and
+          // stop the source so late pushes cannot hit an ended stream
+          wrapperClosed = true
           wrapperStream.write(`data: ${JSON.stringify({
             id: requestId,
             object: 'chat.completion.chunk',
@@ -455,6 +472,7 @@ router.post('/completions', async (ctx: Context) => {
           })}\n\n`)
           wrapperStream.write('data: [DONE]\n\n')
           wrapperStream.end()
+          ;(result.stream as any).destroy?.()
         })
 
         result.stream.pipe(wrapperStream, { end: false })

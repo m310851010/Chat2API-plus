@@ -6,6 +6,7 @@
 export { BaseOAuthAdapter } from './base'
 export { ChatGPTAuthAdapter } from './chatgpt'
 export { DeepSeekAdapter } from './deepseek'
+export { DoubaoAdapter } from './doubao'
 export { GeminiAdapter } from './gemini'
 export { GLMAdapter } from './glm'
 export { GrokAdapter } from './grok'
@@ -19,6 +20,7 @@ export { ZaiAdapter } from './zai'
 import { BaseOAuthAdapter } from './base'
 import { ChatGPTAuthAdapter } from './chatgpt'
 import { DeepSeekAdapter } from './deepseek'
+import { DoubaoAdapter } from './doubao'
 import { GeminiAdapter } from './gemini'
 import { GLMAdapter } from './glm'
 import { GrokAdapter } from './grok'
@@ -43,6 +45,8 @@ export function createAdapter(
       return new ChatGPTAuthAdapter(config)
     case 'deepseek':
       return new DeepSeekAdapter(config)
+    case 'doubao':
+      return new DoubaoAdapter(config)
     case 'gemini':
       return new GeminiAdapter(config)
     case 'glm':
@@ -77,6 +81,8 @@ export function getSupportedAuthMethods(providerType: ProviderType): string[] {
       return ['manual']
     case 'deepseek':
       return ['manual']
+    case 'doubao':
+      return ['manual', 'cookie']
     case 'gemini':
       return ['manual', 'cookie']
     case 'glm':

@@ -120,7 +120,10 @@ export class ChatGPTAuthAdapter extends BaseOAuthAdapter {
    * Validate token validity via /backend-api/me
    */
   async validateToken(credentials: Record<string, string>): Promise<TokenValidationResult> {
-    const token = credentials.token || credentials.accessToken || credentials.userToken
+    // In-app login collects the Bearer token from backend-api request headers
+    // under the 'authorization' key
+    const rawToken = credentials.token || credentials.accessToken || credentials.userToken || credentials.authorization || ''
+    const token = rawToken.replace(/^Bearer\s+/i, '').trim()
 
     if (!token) {
       return {

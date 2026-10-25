@@ -24,7 +24,7 @@ export interface TokenExtractionConfig {
 
 export const TOKEN_EXTRACTION_CONFIGS: Record<ProviderType, TokenExtractionConfig> = {
   chatgpt: {
-    loginUrl: 'https://chatgpt.com/api/auth/session',
+    loginUrl: 'https://chatgpt.com/auth/login',
     tokenSources: [
       {
         type: 'networkHeader',
@@ -130,6 +130,10 @@ export const TOKEN_EXTRACTION_CONFIGS: Record<ProviderType, TokenExtractionConfi
     tokenSources: [
       {
         type: 'cookie',
+        key: 'xiaomichatbot_serviceToken',
+      },
+      {
+        type: 'cookie',
         key: 'serviceToken',
       },
       {
@@ -178,6 +182,22 @@ export const TOKEN_EXTRACTION_CONFIGS: Record<ProviderType, TokenExtractionConfi
     windowTitle: 'Perplexity Login - Please click Sign In to login',
   },
 
+  doubao: {
+    loginUrl: 'https://www.doubao.com/chat/',
+    tokenSources: [
+      {
+        type: 'cookie',
+        key: 'sessionid',
+      },
+      {
+        type: 'cookie',
+        key: 'sessionid_ss',
+      },
+    ],
+    targetDomains: ['.doubao.com', 'doubao.com'],
+    successUrlPatterns: [/doubao\.com\/chat/i],
+    windowTitle: 'Doubao Login',
+  },
   gemini: {
     loginUrl: 'https://gemini.google.com/app',
     tokenSources: [

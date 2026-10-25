@@ -96,7 +96,7 @@ function CodeBlock({ language, code }: CodeBlockData) {
           {language}
         </div>
       ) : null}
-      <pre className="p-3 overflow-x-auto text-sm font-mono leading-relaxed">
+      <pre className="p-3 text-sm font-mono leading-relaxed whitespace-pre-wrap break-all">
         <code>{code}</code>
       </pre>
     </div>

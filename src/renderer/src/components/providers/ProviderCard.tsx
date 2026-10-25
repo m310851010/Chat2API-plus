@@ -29,6 +29,7 @@ import chatgptIcon from '@/assets/providers/chatgpt.svg'
 import deepseekIcon from '@/assets/providers/deepseek.svg'
 import geminiIcon from '@/assets/providers/gemini.svg'
 import glmIcon from '@/assets/providers/glm.svg'
+import doubaoIcon from '@/assets/providers/doubao.svg'
 import grokIcon from '@/assets/providers/grok.svg'
 import kimiIcon from '@/assets/providers/kimi.svg'
 import minimaxIcon from '@/assets/providers/minimax.svg'
@@ -42,6 +43,7 @@ const providerIcons: Record<string, string> = {
   deepseek: deepseekIcon,
   gemini: geminiIcon,
   glm: glmIcon,
+  doubao: doubaoIcon,
   grok: grokIcon,
   kimi: kimiIcon,
   minimax: minimaxIcon,

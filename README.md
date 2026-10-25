@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Release-v1.3.0-blue?style=flat-square&logo=github" alt="Release">
+  <img src="https://img.shields.io/badge/Release-v1.5.0-blue?style=flat-square&logo=github" alt="Release">
   <img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square" alt="License">
   <br>
   <a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/Electron-33+-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron"></a>
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  Chat2API Plus enables zero-cost access to leading AI models by leveraging official web UIs. It supports providers such as DeepSeek, GLM, Kimi, MiniMax, Qwen, and Z.ai, and seamlessly integrates with tools like openlcaw, Cline, and Roo-Code — making any OpenAI-compatible client work out of the box.
+  Chat2API Plus enables zero-cost access to leading AI models by leveraging official web UIs. It supports providers such as ChatGPT, Gemini, Grok, Doubao, DeepSeek, GLM, Kimi, MiniMax, Perplexity, Qwen, and Z.ai, and seamlessly integrates with tools like openlcaw, Cline, and Roo-Code — making any OpenAI-compatible client work out of the box.
 </p>
 
 ![Product Preview](docs/screenshots/preview.png)
@@ -31,7 +31,9 @@
 ## ✨ Features
 
 - OpenAI Compatible API: Provides standard OpenAI-compatible API endpoints for seamless integration
-- Multi-Provider Support: Connect DeepSeek, GLM, Kimi, MiniMax, Perplexity 🆕, Qwen, Z.ai and more
+- Anthropic Compatible API: `/v1/messages` accepts Anthropic-format requests (tools, system prompts, thinking blocks) and streams Anthropic SSE events back
+- Multi-Provider Support: Connect ChatGPT, Gemini, Grok, Doubao, DeepSeek, GLM, Kimi, MiniMax, Perplexity, Qwen, Z.ai and more
+- Built-in Chat Page: In-app playground with conversation history, streaming output, per-conversation model selection, fork and stop generation
 - 🆕 Context Management: Intelligent conversation context management with sliding window, token limit, and summary strategies
 - 🆕 Function Calling Support: Universal tool calling capability for all models via prompt engineering, compatible with Cherry Studio, Kilo Code, and other clients
 - 🆕 Model Mapping: Flexible model name mapping with wildcard support and preferred provider/account selection
@@ -51,16 +53,17 @@
 | ---------------- | ------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ChatGPT          | Access Token  | Yes   | auto, gpt-5, gpt-5-1, gpt-5-2, gpt-5-3, gpt-5-3-mini, gpt-5-mini                                                                                                                                                                                |
 | DeepSeek         | User Token    | Yes   | deepseek-v4-flash, deepseek-v4-pro                                                                                                                                                                                                              |
+| Doubao           | Cookie        | Yes   | doubao-pro-chat, doubao-deep-think                                                                                                                                                                                                              |
 | Gemini           | Cookie        | Yes   | gemini-3.7-flash, gemini-3.6-flash, gemini-3.5-flash, gemini-3.5-flash-thinking, gemini-3.5-flash-thinking-lite, gemini-3.1-pro, gemini-auto, gemini-flash-lite                                                                                   |
 | Grok             | Cookie        | Yes   | grok-4, grok-4-fast, grok-3, grok-3-mini, grok-auto                                                                                                                                                                                             |
-| GLM              | Refresh Token | Yes   | GLM-5.1                                                                                                                                                                                                                                         |
+| GLM              | Refresh Token | Yes   | GLM-5.3, GLM-5.3-flash                                                                                                                                                                                                                          |
 | Kimi             | JWT Token     | Yes   | Kimi-K2.6                                                                                                                                                                                                                                       |
 | MiniMax          | JWT Token     | Yes   | MiniMax-M3, MiniMax-M2.7                                                                                                                                                                                                                        |
-| Mimo             | Cookie        | Yes   | MiMo-V2.5-Pro, MiMo-V2.5, MiMo-V2-Flash                                                                                                                                                                                                         |
+| Mimo             | Cookie        | Yes   | MiMo-V2.6-Flash, MiMo-V2.6-Pro, MiMo-V2.6-Pro-UltraSpeed, mimo-v2-flash, mimo-v2-pro, mimo-v2-omni, mimo-v2.5-pro, mimo-v2.5, mimo-v2-flash-studio, clawm-alpha, clawl-alpha, mimo-v2.1-omni, mimo-v2.1-omni-preview, mimo-v2.1-pro, mimo-v2.1-pro-preview |
 | Perplexity       | Cookie        | Yes   | Auto                                                                                                                                                                                                                                           |
 | Qwen (CN)        | SSO Ticket    | Yes   | Qwen3.6, Qwen3.7-Max, Qwen3.5-Flash, Qwen3-Max, Qwen3-Max-Thinking-Preview, Qwen3-Coder                                                                                                                                                         |
 | Qwen AI (Global) | JWT Token     | Yes   | Qwen3.7-Max, Qwen3.6-Plus, Qwen3.6-35B-A3B, Qwen3.6-27B, Qwen3-Coder                                                                                                                                                                           |
-| Z.ai             | JWT Token     | Yes   | GLM-5.1, GLM-5-Turbo, GLM-5V-Turbo, GLM-5, GLM-4.7                                                                                                                                                                                            |
+| Z.ai             | JWT Token     | Yes   | GLM-5.3, GLM-5.3-flash, GLM-5.2, GLM-5-Turbo, GLM-5V-Turbo, GLM-4.7                                                                                                                                                                                            |
 
 Provider adaptation notes and manual model-addition guides are in [docs/providers](docs/providers/README.md).
 
@@ -186,7 +189,7 @@ For security, you can enable API Key authentication:
 ## ⚙️ Settings
 
 - **Port**: Change the proxy listening port (default: 8080)
-- **Routing Strategy**: Round Robin or Fill First
+- **Routing Strategy**: Round Robin, Fill First, or Failover
 - **Auto-start**: Launch proxy automatically on app startup
 - **Theme**: Light, Dark, or System preference
 - **Language**: English or Simplified Chinese

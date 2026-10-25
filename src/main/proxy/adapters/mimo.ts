@@ -14,6 +14,72 @@ import { getProviderToolProfile } from '../toolCalling/providerProfiles.ts'
 
 const MIMO_API_BASE = 'https://aistudio.xiaomimimo.com'
 
+/**
+ * Chat protocol paths. The web client sends chats to the react protocol (v3)
+ * and only falls back to the legacy bot protocol (v2) when it 404s; the legacy
+ * endpoint now replies with an upgrade notice ("平台升级…请刷新页面").
+ */
+const MIMO_CHAT_PATH_V3 = '/open-apis/react/chat'
+const MIMO_CHAT_PATH_V2 = '/open-apis/bot/chat'
+
+const MIMO_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
+
+const MIMO_THINKING_SUFFIX = /-(think|thinking)$/i
+
+/**
+ * Nudge appended to a retried query when upstream returns an empty answer
+ * (rate-limited replies arrive as empty SSE content, see mimo2api).
+ */
+export const MIMO_EMPTY_ANSWER_HINT = '（请直接回答用户的问题。）'
+
+export interface MimoThinkingOptions {
+  upstreamModel: string
+  enableThinking: boolean
+}
+
+/**
+ * Resolves the upstream model id and thinking switch the way the mimo2api
+ * reference does: a `-think` / `-thinking` model suffix turns thinking on and
+ * is stripped before the request reaches Xiaomi AI Studio; `reasoning_effort`
+ * and think/r1 model names enable thinking without renaming the model.
+ */
+export function resolveMimoThinkingOptions(
+  model: string,
+  reasoningEffort?: string | null,
+  modelMappings?: Record<string, string>
+): MimoThinkingOptions {
+  let upstreamModel = model.trim()
+  let enableThinking = false
+
+  if (MIMO_THINKING_SUFFIX.test(upstreamModel)) {
+    enableThinking = true
+    upstreamModel = upstreamModel.replace(MIMO_THINKING_SUFFIX, '')
+  }
+
+  if (!enableThinking && reasoningEffort) {
+    enableThinking = true
+  }
+
+  const lower = upstreamModel.toLowerCase()
+  if (!enableThinking && (lower.includes('think') || lower.includes('r1'))) {
+    enableThinking = true
+  }
+
+  // A `-think` suffix survives model mapping (no exact display-name match),
+  // so re-map the stripped base name back to its upstream id.
+  if (modelMappings) {
+    const mappedKey = Object.keys(modelMappings).find(
+      (key) => key.toLowerCase() === upstreamModel.toLowerCase()
+    )
+    if (mappedKey) {
+      upstreamModel = modelMappings[mappedKey]
+    }
+  }
+
+  return { upstreamModel, enableThinking }
+}
+
 function uuid(separator: boolean = true): string {
   const id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0
@@ -31,6 +97,7 @@ interface ChatCompletionRequest {
   messages: MimoMessage[]
   stream?: boolean
   temperature?: number
+  reasoning_effort?: 'low' | 'medium' | 'high'
 }
 
 interface MimoUsage {
@@ -40,9 +107,30 @@ interface MimoUsage {
   reasoningTokens: number
 }
 
+/**
+ * v2 (bot/chat) nests the counters under a `usage` key; react/chat (v3) sends
+ * them top-level with an OpenAI-style `nativeUsage` companion.
+ */
+function extractMimoUsage(data: any): MimoUsage | null {
+  if (data?.usage && typeof data.usage.promptTokens === 'number') {
+    return data.usage as MimoUsage
+  }
+  if (typeof data?.promptTokens === 'number') {
+    return {
+      promptTokens: data.promptTokens,
+      completionTokens: data.completionTokens ?? 0,
+      totalTokens: data.totalTokens ?? 0,
+      reasoningTokens: data.nativeUsage?.completion_tokens_details?.reasoning_tokens ?? 0,
+    }
+  }
+  return null
+}
+
 interface MimoChunk {
   type: 'text' | 'usage' | 'dialogId' | 'finish' | 'message'
   content?: string
+  reasoningContent?: string
+  messageType?: string
   usage?: MimoUsage
 }
 
@@ -76,11 +164,17 @@ function extractName(inner: string): string | null {
   return null
 }
 
+function normalizeToolCallMarkers(text: string): string {
+  // Older captures carried mangled open markers; normalize before parsing
+  return text.replace(/<tool_callgt;/g, '<tool_call>')
+}
+
 function parseMimoNativeToolCalls(text: string): ParsedToolCall[] {
   const calls: ParsedToolCall[] = []
-  const blockRe = /<tool_callgt;([\s\S]*?)<\/tool_call>/g
+  const normalized = normalizeToolCallMarkers(text)
+  const blockRe = /<tool_call>([\s\S]*?)<\/tool_call>/g
   let block: RegExpExecArray | null
-  while ((block = blockRe.exec(text)) !== null) {
+  while ((block = blockRe.exec(normalized)) !== null) {
     let inner = block[1].trim()
     if (inner.startsWith('<tool_result>')) inner = inner.slice('<tool_result>'.length).trim()
     if (inner.endsWith('</tool_result>')) inner = inner.slice(0, -'</tool_result>'.length).trim()
@@ -88,10 +182,18 @@ function parseMimoNativeToolCalls(text: string): ParsedToolCall[] {
       try {
         const parsed = JSON.parse(inner)
         if (parsed.name) {
+          let args: Record<string, unknown> = parsed.arguments ?? parsed.parameters ?? parsed.input ?? {}
+          if (typeof args === 'string') {
+            try {
+              args = JSON.parse(args)
+            } catch {
+              args = { value: args }
+            }
+          }
           calls.push({
             id: `call_${Math.random().toString(36).slice(2, 10)}`,
             name: parsed.name,
-            arguments: parsed.arguments ?? parsed.parameters ?? parsed.input ?? {},
+            arguments: args,
           })
         }
       } catch {
@@ -134,7 +236,7 @@ function parseMimoNativeToolCalls(text: string): ParsedToolCall[] {
 }
 
 export function parseToolCalls(text: string): ParsedToolCall[] {
-  if (text.includes('<tool_callgt;')) {
+  if (text.includes('<tool_call')) {
     const calls = parseMimoNativeToolCalls(text)
     return calls
   }
@@ -156,7 +258,39 @@ export function parseToolCalls(text: string): ParsedToolCall[] {
 }
 
 export function hasToolCallMarker(text: string): boolean {
-  return text.includes('<tool_callgt;') || text.includes('<function_calls>')
+  return text.includes('<tool_call') || text.includes('<function_calls>')
+}
+
+/** Removes parsed native tool-call blocks from visible content (mimo2api parity). */
+function stripNativeToolCallBlocks(text: string): string {
+  return normalizeToolCallMarkers(text)
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+    .trim()
+}
+
+/** Extracts a single cookie value from a raw `k1=v1; k2=v2` cookie string. */
+export function parseCookieValue(cookieString: string, name: string): string {
+  for (const pair of cookieString.split(';')) {
+    const eq = pair.indexOf('=')
+    if (eq === -1) continue
+    if (pair.slice(0, eq).trim() === name) {
+      const value = pair.slice(eq + 1).trim()
+      // Cookie values may be serialized with surrounding double quotes
+      if (value.length > 1 && value.startsWith('"') && value.endsWith('"')) {
+        return value.slice(1, -1)
+      }
+      return value
+    }
+  }
+  return ''
+}
+
+/** The login-state cookie ships as either `serviceToken` or `xiaomichatbot_serviceToken`. */
+export function getMimoServiceToken(cookieString: string): string {
+  return (
+    parseCookieValue(cookieString, 'xiaomichatbot_serviceToken') ||
+    parseCookieValue(cookieString, 'serviceToken')
+  )
 }
 
 const CITATION_PATTERN = '(?:从)?\\(citation:\\d+\\)(?:中[：:])?'
@@ -323,13 +457,19 @@ export class MimoAdapter {
     this.account = account
   }
 
-  private getCredentials(): { serviceToken: string; userId: string; phToken: string } {
+  private getCredentials(): { cookie: string; phToken: string } {
     const credentials = this.account.credentials
-    return {
-      serviceToken: credentials.service_token || '',
-      userId: credentials.user_id || '',
-      phToken: credentials.ph_token || '',
-    }
+
+    // Legacy accounts store three split fields; compose them back into one
+    // cookie string. New accounts store the full browser cookie string.
+    const legacyParts: string[] = []
+    if (credentials.service_token) legacyParts.push(`serviceToken=${credentials.service_token}`)
+    if (credentials.user_id) legacyParts.push(`userId=${credentials.user_id}`)
+    if (credentials.ph_token) legacyParts.push(`xiaomichatbot_ph=${credentials.ph_token}`)
+
+    const cookie = (credentials.cookie || legacyParts.join('; ')).trim()
+    const phToken = parseCookieValue(cookie, 'xiaomichatbot_ph') || credentials.ph_token || ''
+    return { cookie, phToken }
   }
 
   static isMimoProvider(provider: Provider): boolean {
@@ -340,12 +480,13 @@ export class MimoAdapter {
     return `${MIMO_API_BASE}${path}?xiaomichatbot_ph=${encodeURIComponent(phToken)}`
   }
 
-  private buildHeaders(serviceToken: string, userId: string, phToken: string): Record<string, string> {
+  private buildHeaders(cookie: string): Record<string, string> {
     return {
       'Content-Type': 'application/json',
-      Cookie: `serviceToken=${serviceToken}; userId=${userId}; xiaomichatbot_ph=${phToken}`,
+      Cookie: cookie,
       Origin: MIMO_API_BASE,
       Referer: `${MIMO_API_BASE}/`,
+      'User-Agent': MIMO_USER_AGENT,
       'X-Timezone': 'Asia/Shanghai',
       Accept: '*/*',
       'Accept-Encoding': 'gzip, deflate, br, zstd',
@@ -362,7 +503,7 @@ export class MimoAdapter {
   }
 
   private async saveConversation(conversationId: string): Promise<void> {
-    const { serviceToken, userId, phToken } = this.getCredentials()
+    const { cookie, phToken } = this.getCredentials()
     const response = await axios.post(
       this.buildUrl('/open-apis/chat/conversation/save', phToken),
       {
@@ -371,7 +512,7 @@ export class MimoAdapter {
         type: 'chat',
       },
       {
-        headers: this.buildHeaders(serviceToken, userId, phToken),
+        headers: this.buildHeaders(cookie),
         timeout: 30000,
         validateStatus: () => true,
       }
@@ -390,7 +531,7 @@ export class MimoAdapter {
     }
 
     try {
-      const { serviceToken, userId, phToken } = this.getCredentials()
+      const { cookie, phToken } = this.getCredentials()
       const response = await axios.post(
         this.buildUrl('/open-apis/chat/conversation/genTitle', phToken),
         {
@@ -398,7 +539,7 @@ export class MimoAdapter {
           content,
         },
         {
-          headers: this.buildHeaders(serviceToken, userId, phToken),
+          headers: this.buildHeaders(cookie),
           timeout: 30000,
           validateStatus: () => true,
         }
@@ -416,27 +557,33 @@ export class MimoAdapter {
     }
   }
 
-  async chatCompletion(request: ChatCompletionRequest): Promise<{
+  async chatCompletion(
+    request: ChatCompletionRequest,
+    querySuffix?: string
+  ): Promise<{
     response: AxiosResponse
     conversationId: string
     query: string
   }> {
-    const { serviceToken, userId, phToken } = this.getCredentials()
+    const { cookie, phToken } = this.getCredentials()
 
-    if (!serviceToken || !userId || !phToken) {
-      throw new Error('Mimo credentials not configured. Please add service_token, user_id, and ph_token in account settings.')
+    if (!cookie || !phToken) {
+      throw new Error(
+        'Mimo credentials not configured. Paste the full aistudio.xiaomimimo.com cookie string (must include serviceToken and xiaomichatbot_ph) in account settings.'
+      )
     }
 
     const conversationId = uuid(false)
     const msgId = uuid(false).slice(0, 32)
-    const query = buildMimoQuery(request.messages)
+    const baseQuery = buildMimoQuery(request.messages)
+    const query = querySuffix ? `${baseQuery}\n\n${querySuffix}` : baseQuery
     await this.saveConversation(conversationId)
 
-    const modelLower = request.model.toLowerCase()
-    let enableThinking = false
-    if (modelLower.includes('think') || modelLower.includes('r1')) {
-      enableThinking = true
-    }
+    const { upstreamModel, enableThinking } = resolveMimoThinkingOptions(
+      request.model,
+      request.reasoning_effort,
+      this.provider.modelMappings
+    )
 
     const requestBody = {
       msgId,
@@ -446,20 +593,31 @@ export class MimoAdapter {
       modelConfig: {
         enableThinking,
         webSearchStatus: 'disabled',
-        model: request.model,
+        model: upstreamModel,
         temperature: request.temperature ?? 0.8,
         topP: 0.95,
       },
       multiMedias: [],
     }
 
-    const response = await axios({
-      method: 'POST',
-      url: this.buildUrl('/open-apis/bot/chat', phToken),
-      data: requestBody,
-      responseType: 'stream',
-      headers: this.buildHeaders(serviceToken, userId, phToken),
-    })
+    const sendChat = (path: string) =>
+      axios({
+        method: 'POST',
+        url: this.buildUrl(path, phToken),
+        data: requestBody,
+        responseType: 'stream',
+        headers: this.buildHeaders(cookie),
+        // A 404 from the react protocol must not throw so we can fall back
+        validateStatus: () => true,
+      })
+
+    let response = await sendChat(MIMO_CHAT_PATH_V3)
+    if (response.status === 404) {
+      // Legacy backend without the react protocol — mirror the web client's
+      // v3 -> v2 fallback
+      console.warn('[Mimo] react/chat unavailable (404), falling back to bot/chat')
+      response = await sendChat(MIMO_CHAT_PATH_V2)
+    }
 
     return { response, conversationId, query }
   }
@@ -468,9 +626,9 @@ export class MimoAdapter {
     conversationIds: string[]
     hasMore: boolean
   }> {
-    const { serviceToken, userId, phToken } = this.getCredentials()
+    const { cookie, phToken } = this.getCredentials()
 
-    if (!serviceToken || !userId || !phToken) {
+    if (!cookie || !phToken) {
       throw new Error('Mimo credentials not configured')
     }
 
@@ -485,12 +643,7 @@ export class MimoAdapter {
         },
       },
       {
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: `serviceToken=${serviceToken}; userId=${userId}; xiaomichatbot_ph=${phToken}`,
-          Origin: MIMO_API_BASE,
-          Referer: `${MIMO_API_BASE}/`,
-        },
+        headers: this.buildHeaders(cookie),
         timeout: 30000,
         validateStatus: () => true,
       }
@@ -517,9 +670,9 @@ export class MimoAdapter {
       return true
     }
 
-    const { serviceToken, userId, phToken } = this.getCredentials()
+    const { cookie, phToken } = this.getCredentials()
 
-    if (!serviceToken || !userId || !phToken) {
+    if (!cookie || !phToken) {
       throw new Error('Mimo credentials not configured')
     }
 
@@ -529,12 +682,7 @@ export class MimoAdapter {
       url,
       conversationIds,
       {
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: `serviceToken=${serviceToken}; userId=${userId}; xiaomichatbot_ph=${phToken}`,
-          Origin: MIMO_API_BASE,
-          Referer: `${MIMO_API_BASE}/`,
-        },
+        headers: this.buildHeaders(cookie),
         timeout: 60000,
         validateStatus: () => true,
       }
@@ -605,17 +753,22 @@ export class MimoStreamHandler {
   private citationBuffer: { value: string } = { value: '' }
   private thinkingCitationBuffer: { value: string } = { value: '' }
   private toolStreamParser?: ToolStreamParser
+  private retryStream?: () => Promise<NodeJS.ReadableStream | null>
+  private retried: boolean = false
+  private sawUpstreamError: boolean = false
 
   constructor(
     model: string,
     conversationId: string,
     thinkingMode: 'passthrough' | 'strip' | 'separate' = 'strip',
-    toolCallingPlan?: ToolCallingPlan
+    toolCallingPlan?: ToolCallingPlan,
+    retryStream?: () => Promise<NodeJS.ReadableStream | null>
   ) {
     this.model = model
     this.conversationId = conversationId
     this.thinkingMode = thinkingMode
     this.toolStreamParser = toolCallingPlan?.shouldParseResponse ? new ToolStreamParser(toolCallingPlan) : undefined
+    this.retryStream = retryStream
   }
 
   async *handleStream(stream: NodeJS.ReadableStream): AsyncGenerator<string> {
@@ -624,9 +777,33 @@ export class MimoStreamHandler {
 
     yield this.formatOpenAIChunk(id, created, { role: 'assistant', content: '' }, 'role')
 
+    yield* this.pumpUpstreamEvents(stream, id, created)
+
+    const retryStream = await this.openRetryStreamIfNeeded()
+    if (retryStream) {
+      yield* this.pumpUpstreamEvents(retryStream, id, created)
+    }
+
+    const flushChunks = this.toolStreamParser?.flush(this.createBaseChunk(id, created)) ?? []
+    for (const chunk of flushChunks) {
+      yield `data: ${JSON.stringify(chunk)}\n\n`
+    }
+
+    yield this.formatOpenAIChunk(id, created, {}, this.toolStreamParser?.hasEmittedToolCall() ? 'tool_calls' : 'stop')
+
+    if (this.usage) {
+      yield this.formatOpenAIUsageChunk(id, created, this.usage)
+    }
+  }
+
+  private async *pumpUpstreamEvents(
+    stream: NodeJS.ReadableStream,
+    id: string,
+    created: number
+  ): AsyncGenerator<string> {
     let buffer = ''
     let currentEvent = ''
-    
+
     // Track state and content
     let state: 'init' | 'thinking' | 'content' = 'init'
     let totalContent = ''
@@ -651,7 +828,25 @@ export class MimoStreamHandler {
             const data = JSON.parse(dataStr)
             const mimoChunk: MimoChunk = { type: currentEvent as any, ...data }
 
-            if ((mimoChunk.type === 'message' || mimoChunk.type === 'text') && mimoChunk.content) {
+            // react/chat (v3) streams reasoning as a dedicated field instead
+            // of <think> tags
+            if (typeof data.reasoningContent === 'string' && data.reasoningContent) {
+              this.thinking += data.reasoningContent
+              if (this.thinkingMode === 'separate') {
+                const cleaned = stripCitationsWithBuffer(data.reasoningContent, this.thinkingCitationBuffer)
+                if (cleaned) {
+                  yield this.formatOpenAIChunk(id, created, { reasoning_content: cleaned })
+                }
+              }
+            }
+
+            if (currentEvent === 'error' && typeof data.content === 'string' && data.content) {
+              // Surface upstream errors (auth expiry, risk control, upgrade
+              // notices) visibly instead of dropping them silently
+              console.warn('[Mimo] Upstream error event:', data.content)
+              this.sawUpstreamError = true
+              yield this.formatOpenAIChunk(id, created, { content: `\n\n[Mimo] ${data.content}` })
+            } else if ((mimoChunk.type === 'message' || mimoChunk.type === 'text') && mimoChunk.content) {
               const newText = (mimoChunk.content ?? '').replace(/\u0000/g, '')
               totalContent += newText
               this.content = totalContent
@@ -730,8 +925,9 @@ export class MimoStreamHandler {
                 
                 lastProcessedIndex = totalContent.length
               }
-            } else if (mimoChunk.type === 'usage' && mimoChunk.usage) {
-              this.usage = mimoChunk.usage
+            } else if (mimoChunk.type === 'usage') {
+              const usage = extractMimoUsage(data)
+              if (usage) this.usage = usage
             } else if (mimoChunk.type === 'dialogId' && mimoChunk.content) {
               this.dialogId = mimoChunk.content
             }
@@ -740,52 +936,16 @@ export class MimoStreamHandler {
           }
         }
       }
-    }
-
-    const flushChunks = this.toolStreamParser?.flush(this.createBaseChunk(id, created)) ?? []
-    for (const chunk of flushChunks) {
-      yield `data: ${JSON.stringify(chunk)}\n\n`
-    }
-
-    yield this.formatOpenAIChunk(id, created, {}, this.toolStreamParser?.hasEmittedToolCall() ? 'tool_calls' : 'stop')
-
-    if (this.usage) {
-      yield this.formatOpenAIUsageChunk(id, created, this.usage)
     }
   }
 
   async handleNonStream(stream: NodeJS.ReadableStream): Promise<string> {
-    let buffer = ''
-    let currentEvent = ''
+    await this.consumeUpstream(stream)
 
-    for await (const chunk of stream) {
-      buffer += chunk.toString()
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        const trimmed = line.trim()
-
-        if (trimmed.startsWith('event:')) {
-          currentEvent = trimmed.slice(6).trim()
-        } else if (trimmed.startsWith('data:')) {
-          try {
-            const data = JSON.parse(trimmed.slice(5).trim())
-            const mimoChunk: MimoChunk = { type: currentEvent as any, ...data }
-
-            if ((mimoChunk.type === 'message' || mimoChunk.type === 'text') && mimoChunk.content) {
-              const text = (mimoChunk.content ?? '').replace(/\u0000/g, '')
-              this.content += text
-            } else if (mimoChunk.type === 'usage' && mimoChunk.usage) {
-              this.usage = mimoChunk.usage
-            } else if (mimoChunk.type === 'dialogId' && mimoChunk.content) {
-              this.dialogId = mimoChunk.content
-            }
-          } catch {
-            // Skip malformed SSE data
-          }
-        }
-      }
+    const retryStream = await this.openRetryStreamIfNeeded()
+    if (retryStream) {
+      this.content = ''
+      await this.consumeUpstream(retryStream)
     }
 
     // Check for tool calls
@@ -804,7 +964,17 @@ export class MimoStreamHandler {
       finalContent = extracted.content
       reasoningContent = extracted.thinking
     }
-    
+
+    // react/chat reasoning arrives via the reasoningContent field rather than
+    // <think> tags; merge both sources
+    if (this.thinking) {
+      reasoningContent = reasoningContent ? `${reasoningContent}\n${this.thinking}` : this.thinking
+    }
+
+    if (this.toolCalls.length > 0) {
+      finalContent = stripNativeToolCallBlocks(finalContent)
+    }
+
     finalContent = stripCitations(finalContent)
     if (reasoningContent) {
       reasoningContent = stripCitations(reasoningContent)
@@ -853,6 +1023,83 @@ export class MimoStreamHandler {
     }
 
     return JSON.stringify(response)
+  }
+
+  private async consumeUpstream(stream: NodeJS.ReadableStream): Promise<void> {
+    let buffer = ''
+    let currentEvent = ''
+
+    for await (const chunk of stream) {
+      buffer += chunk.toString()
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+
+        if (trimmed.startsWith('event:')) {
+          currentEvent = trimmed.slice(6).trim()
+        } else if (trimmed.startsWith('data:')) {
+          try {
+            const data = JSON.parse(trimmed.slice(5).trim())
+            const mimoChunk: MimoChunk = { type: currentEvent as any, ...data }
+
+            if (typeof data.reasoningContent === 'string' && data.reasoningContent) {
+              this.thinking += data.reasoningContent
+            }
+
+            if (currentEvent === 'error' && typeof data.content === 'string' && data.content) {
+              console.warn('[Mimo] Upstream error event:', data.content)
+              this.sawUpstreamError = true
+              this.content += `\n\n[Mimo] ${data.content}`
+            } else if ((mimoChunk.type === 'message' || mimoChunk.type === 'text') && mimoChunk.content) {
+              const text = (mimoChunk.content ?? '').replace(/\u0000/g, '')
+              this.content += text
+            } else if (mimoChunk.type === 'usage') {
+              const usage = extractMimoUsage(data)
+              if (usage) this.usage = usage
+            } else if (mimoChunk.type === 'dialogId' && mimoChunk.content) {
+              this.dialogId = mimoChunk.content
+            }
+          } catch {
+            // Skip malformed SSE data
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Rate-limited Mimo replies often arrive as an empty answer (thinking only
+   * or nothing at all). Like the mimo2api reference, wait briefly and re-ask
+   * once with a nudge appended to the query; the retry stream is opened by the
+   * caller-supplied callback so both attempts share one outbound stream.
+   */
+  private async openRetryStreamIfNeeded(): Promise<NodeJS.ReadableStream | null> {
+    if (this.retried || !this.retryStream || !this.hasEmptyAnswer()) {
+      return null
+    }
+    this.retried = true
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+      const retryStream = await this.retryStream()
+      if (!retryStream) {
+        return null
+      }
+      console.warn('[Mimo] Upstream returned an empty answer, retrying once with a nudge')
+      return retryStream
+    } catch (error) {
+      console.error('[Mimo] Empty-answer retry failed:', error)
+      return null
+    }
+  }
+
+  private hasEmptyAnswer(): boolean {
+    // Do not retry genuine upstream errors — a nudge will not fix them
+    if (this.sawUpstreamError) {
+      return false
+    }
+    return this.getAssistantContentForTitle().trim().length === 0
   }
 
   private formatOpenAIChunk(

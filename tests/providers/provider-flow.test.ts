@@ -177,8 +177,9 @@ test('DeepSeek provider config uses Web 2.0 browser headers', () => {
 })
 
 test('GLM, Kimi, and MiniMax built-in default models match current web providers', () => {
-  assert.deepEqual(glmConfig.supportedModels, ['GLM-5.1'])
-  assert.equal(glmConfig.modelMappings?.['GLM-5.1'], 'glm-5.1')
+  assert.deepEqual(glmConfig.supportedModels, ['GLM-5.3', 'GLM-5.3-flash'])
+  assert.equal(glmConfig.modelMappings?.['GLM-5.3'], 'glm-5.3')
+  assert.equal(glmConfig.modelMappings?.['GLM-5.3-flash'], 'glm-5.3-flash')
 
   assert.deepEqual(kimiConfig.supportedModels, ['Kimi-K2.6'])
   assert.equal(kimiConfig.modelMappings?.['Kimi-K2.6'], 'kimi-k2.6')
@@ -271,15 +272,14 @@ test('domestic Qwen models match the web chat model ids captured from HAR', () =
   assert.deepEqual(qwenConfig.modelMappings, expectedMappings)
 
   const qwenAdapterSource = readFileSync(join(root, 'src/main/proxy/adapters/qwen.ts'), 'utf8')
-  const addProviderSource = readFileSync(join(root, 'src/renderer/src/components/providers/AddProviderDialog.tsx'), 'utf8')
   const zh = JSON.parse(readFileSync(join(root, 'src/renderer/src/i18n/locales/zh-CN.json'), 'utf8'))
   const en = JSON.parse(readFileSync(join(root, 'src/renderer/src/i18n/locales/en-US.json'), 'utf8'))
 
   assert.match(qwenAdapterSource, /'Qwen3\.6': 'Qwen'/)
   assert.match(qwenAdapterSource, /'Qwen3-Coder': 'Qwen3-Coder'/)
   assert.doesNotMatch(qwenAdapterSource, /qwen3-coder-plus|tongyi-qwen3-max-model-agent|tongyi-qwen-plus-agent/)
-  assert.match(addProviderSource, /supportedModels: \['Qwen3\.6', 'Qwen3\.7-Max', 'Qwen3\.5-Flash', 'Qwen3-Max', 'Qwen3-Max-Thinking-Preview', 'Qwen3-Coder'\]/)
-  assert.match(addProviderSource, /'Qwen3\.6': 'Qwen'/)
+  // The add-provider dialog derives its fallback from these configs directly
+  // (covered by the dialog fallback test), so no hardcoded copy is asserted here
   assert.deepEqual(zh.qwen.models, expectedMappings)
   assert.deepEqual(en.qwen.models, expectedMappings)
 })
@@ -332,29 +332,31 @@ test('Qwen AI defaults keep only the filtered current web model set', () => {
 
 test('Z.ai default models match the latest chat.z.ai HAR model ids', () => {
   const expectedModels = [
-    'GLM-5.1',
+    'GLM-5.3',
+    'GLM-5.3-flash',
+    'GLM-5.2',
     'GLM-5-Turbo',
     'GLM-5V-Turbo',
-    'GLM-5',
     'GLM-4.7',
   ]
   const expectedMappings = {
-    'GLM-5.1': 'GLM-5.1',
+    'GLM-5.3': 'glm-5.3',
+    'GLM-5.3-flash': 'x-preview-l',
+    'GLM-5.2': 'glm-5.2',
     'GLM-5-Turbo': 'GLM-5-Turbo',
     'GLM-5V-Turbo': 'GLM-5v-Turbo',
-    'GLM-5': 'glm-5',
     'GLM-4.7': 'glm-4.7',
   }
 
   assert.deepEqual(zaiConfig.supportedModels, expectedModels)
   assert.deepEqual(zaiConfig.modelMappings, expectedMappings)
 
-  for (const removedModel of ['glm-4.6v', 'glm-4.6', 'glm-4.5v', 'glm-4.5-air']) {
+  for (const removedModel of ['glm-4.6v', 'glm-4.6', 'glm-4.5v', 'glm-4.5-air', 'glm-5.1', 'glm-5']) {
     assert.equal(zaiConfig.modelMappings?.[removedModel], undefined, removedModel)
   }
 
   const zaiAdapterSource = readFileSync(join(root, 'src/main/proxy/adapters/zai.ts'), 'utf8')
-  assert.match(zaiAdapterSource, /'glm-5\.1': 'GLM-5\.1'/)
+  assert.match(zaiAdapterSource, /'glm-5\.3': 'glm-5\.3'/)
   assert.match(zaiAdapterSource, /'glm-5v-turbo': 'GLM-5v-Turbo'/)
   assert.match(zaiAdapterSource, /'GLM-5V-Turbo': 'GLM-5v-Turbo'/)
   assert.doesNotMatch(zaiAdapterSource, /'glm-4\.6v':/)
@@ -364,6 +366,7 @@ test('Z.ai default models match the latest chat.z.ai HAR model ids', () => {
 test('provider docs cover every built-in provider and Qwen AI manual model additions', () => {
   const providerDocs = [
     'deepseek',
+    'doubao',
     'glm',
     'kimi',
     'minimax',
@@ -420,7 +423,11 @@ test('README Supported Providers model lists mirror current defaults with Perple
   const readme = readFileSync(join(root, 'README.md'), 'utf8')
   const readmeCn = readFileSync(join(root, 'README_CN.md'), 'utf8')
   const expectedRows = [
+    ['ChatGPT', 'auto, gpt-5, gpt-5-1, gpt-5-2, gpt-5-3, gpt-5-3-mini, gpt-5-mini'],
     ['DeepSeek', deepseekConfig.supportedModels?.join(', ')],
+    ['Doubao', 'doubao-pro-chat, doubao-deep-think'],
+    ['Gemini', 'gemini-3.7-flash, gemini-3.6-flash, gemini-3.5-flash, gemini-3.5-flash-thinking, gemini-3.5-flash-thinking-lite, gemini-3.1-pro, gemini-auto, gemini-flash-lite'],
+    ['Grok', 'grok-4, grok-4-fast, grok-3, grok-3-mini, grok-auto'],
     ['GLM', glmConfig.supportedModels?.join(', ')],
     ['Kimi', kimiConfig.supportedModels?.join(', ')],
     ['MiniMax', minimaxConfig.supportedModels?.join(', ')],
@@ -443,10 +450,32 @@ test('README Supported Providers model lists mirror current defaults with Perple
 })
 
 test('Mimo model names and conversation flow match Xiaomi AI Studio web requests', () => {
-  assert.deepEqual(mimoConfig.supportedModels, ['MiMo-V2.5-Pro', 'MiMo-V2.5', 'MiMo-V2-Flash'])
-  assert.equal(mimoConfig.modelMappings?.['MiMo-V2.5-Pro'], 'mimo-v2.5-pro')
-  assert.equal(mimoConfig.modelMappings?.['MiMo-V2.5'], 'mimo-v2.5')
-  assert.equal(mimoConfig.modelMappings?.['MiMo-V2-Flash'], 'mimo-v2-flash')
+  assert.deepEqual(mimoConfig.supportedModels, [
+    'MiMo-V2.6-Flash',
+    'MiMo-V2.6-Pro',
+    'MiMo-V2.6-Pro-UltraSpeed',
+    'mimo-v2-flash',
+    'mimo-v2-pro',
+    'mimo-v2-omni',
+    'mimo-v2.5-pro',
+    'mimo-v2.5',
+    'mimo-v2-flash-studio',
+    'clawm-alpha',
+    'clawl-alpha',
+    'mimo-v2.1-omni',
+    'mimo-v2.1-omni-preview',
+    'mimo-v2.1-pro',
+    'mimo-v2.1-pro-preview',
+  ])
+  assert.equal(mimoConfig.modelMappings?.['MiMo-V2.6-Flash'], 'mimo-v2.6-flash')
+  assert.equal(mimoConfig.modelMappings?.['MiMo-V2.6-Pro'], 'mimo-v2.6-pro')
+  assert.equal(mimoConfig.modelMappings?.['MiMo-V2.6-Pro-UltraSpeed'], 'mimo-v2.6-pro-ultraspeed-studio')
+  assert.equal(mimoConfig.modelMappings?.['mimo-v2.5-pro'], 'mimo-v2.5-pro')
+
+  // Credentials are a single full cookie string with the login URL in the help text
+  assert.equal(mimoConfig.credentialFields?.length, 1)
+  assert.equal(mimoConfig.credentialFields?.[0]?.name, 'cookie')
+  assert.match(mimoConfig.credentialFields?.[0]?.helpText || '', /aistudio\.xiaomimimo\.com/)
 
   const forwarderSource = readFileSync(
     join(root, 'src/main/proxy/forwarder.ts'),
@@ -460,7 +489,9 @@ test('Mimo model names and conversation flow match Xiaomi AI Studio web requests
   assert.doesNotMatch(forwardMimoSource, /model:\s*request\.model/)
   assert.match(forwardMimoSource, /const transformed = this\.transformRequestForPromptToolUse\(request, provider\)/)
   assert.match(forwardMimoSource, /messages:\s*transformedRequest\.messages/)
-  assert.match(forwardMimoSource, /new MimoStreamHandler\(actualModel, conversationId, 'separate', transformed\.plan\)/)
+  assert.match(forwardMimoSource, /new MimoStreamHandler\(actualModel, conversationId, 'separate', transformed\.plan, retryStream\)/)
+  assert.match(forwardMimoSource, /reasoning_effort:\s*request\.reasoning_effort/)
+  assert.match(forwardMimoSource, /MIMO_EMPTY_ANSWER_HINT/)
   assert.match(forwardMimoSource, /this\.applyToolCallsToResponse\(.*transformed/s)
 
   const mimoAdapterSource = readFileSync(
@@ -468,6 +499,8 @@ test('Mimo model names and conversation flow match Xiaomi AI Studio web requests
     'utf8',
   )
 
+  assert.match(mimoAdapterSource, /open-apis\/react\/chat/)
+  assert.match(mimoAdapterSource, /open-apis\/bot\/chat/)
   assert.match(mimoAdapterSource, /open-apis\/chat\/conversation\/save/)
   assert.match(mimoAdapterSource, /open-apis\/chat\/conversation\/genTitle/)
   assert.match(mimoAdapterSource, /async deleteSession\(conversationId: string\)/)
@@ -479,24 +512,44 @@ test('Mimo model names and conversation flow match Xiaomi AI Studio web requests
   assert.match(forwardMimoSource, /await deleteSessionCallback\(conversationId\)/)
 })
 
-test('Add provider dialog templates match the updated built-in provider flows', () => {
-  const source = readFileSync(
+test('Add provider dialog fallback templates are derived from the builtin provider configs', () => {  const source = readFileSync(
     join(root, 'src/renderer/src/components/providers/AddProviderDialog.tsx'),
     'utf8',
   )
 
-  assert.match(source, /supportedModels:\s*\['deepseek-v4-flash', 'deepseek-v4-pro'\]/)
-  assert.doesNotMatch(source, /supportedModels:\s*\['deepseek-v4-pro'.*'deepseek-reasoner'/s)
+  // The fallback list must reuse the main-process source of truth instead of
+  // a hand-maintained copy that drifts out of date.
+  assert.match(source, /import \{ builtinProviders as builtinProviderConfigs \} from '\.\.\/\.\.\/\.\.\/\.\.\/main\/providers\/builtin\/index\.ts'/)
+  assert.match(source, /builtinProviderConfigs\.map\(/)
+  assert.doesNotMatch(source, /supportedModels:\s*\[/)
   assert.doesNotMatch(source, /DeepSeek-V3\.2|DeepSeek-R1|deepseek-reasoner/)
-  assert.match(source, /supportedModels: \['GLM-5\.1'\]/)
-  assert.match(source, /'GLM-5\.1': 'glm-5\.1'/)
-  assert.match(source, /supportedModels: \['Kimi-K2\.6'\]/)
-  assert.match(source, /'Kimi-K2\.6': 'kimi-k2\.6'/)
   assert.doesNotMatch(source, /'Kimi-K2\.5': 'kimi-k2\.5'/)
-  assert.match(source, /supportedModels: \['MiniMax-M3', 'MiniMax-M2\.7'\]/)
-  assert.match(source, /'MiniMax-M2\.7': 'MiniMax-M2\.7'/)
-  assert.match(source, /'Content-Type': 'application\/connect\+json'/)
-  assert.doesNotMatch(source, /supportedModels: \['kimi', 'kimi-search', 'kimi-research', 'kimi-k1'\]/)
+})
+
+test('stale dynamic model lists fall back to the builtin list on startup', () => {
+  const source = readFileSync(
+    join(root, 'src/main/store/store.ts'),
+    'utf8',
+  )
+
+  // A dynamic fetch that has not succeeded for over a day must not keep the
+  // persisted (outdated) model list frozen away from the builtin configs
+  assert.match(source, /DYNAMIC_MODELS_MAX_AGE_MS = 24 \* 60 \* 60 \* 1000/)
+  assert.match(source, /Date\.now\(\) - p\.modelsFetchedAt < DYNAMIC_MODELS_MAX_AGE_MS/)
+})
+
+test('startup sync re-applies builtin credential fields to persisted providers', () => {
+  const source = readFileSync(
+    join(root, 'src/main/store/store.ts'),
+    'utf8',
+  )
+
+  // Mimo moved from three split cookie fields to a single cookie field; without
+  // re-applying credentialFields on startup, accounts added before the change
+  // keep rendering the removed fields and fail required-field validation
+  // (OAuth login fills only the new field).
+  assert.match(source, /credentialFields: builtinConfig\.credentialFields/)
+  assert.match(source, /authType: builtinConfig\.authType/)
 })
 
 test('DeepSeek locale model labels only describe primary provider models', () => {

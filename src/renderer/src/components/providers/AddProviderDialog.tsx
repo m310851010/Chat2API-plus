@@ -27,8 +27,11 @@ import perplexityIcon from '@/assets/providers/perplexity.svg'
 import qwenIcon from '@/assets/providers/qwen.svg'
 import zaiIcon from '@/assets/providers/zai.svg'
 import geminiIcon from '@/assets/providers/gemini.svg'
+import doubaoIcon from '@/assets/providers/doubao.svg'
 import grokIcon from '@/assets/providers/grok.svg'
 import { TextWithLinks } from '@/components/providers/TextWithLinks'
+// Pure data module (type-only dependencies) — safe to share with the renderer
+import { builtinProviders as builtinProviderConfigs } from '../../../../main/providers/builtin/index.ts'
 
 interface AddProviderDialogProps {
   open: boolean
@@ -60,6 +63,7 @@ const providerIcons: Record<string, string> = {
   'qwen-ai': qwenIcon,
   zai: zaiIcon,
   gemini: geminiIcon,
+  doubao: doubaoIcon,
   grok: grokIcon,
 }
 
@@ -118,36 +122,83 @@ function mapOAuthCredentials(providerId: string | undefined, credentials: Record
     return { sessionToken: credentials['next-auth.session-token'] }
   }
 
+  // For Mimo, compose the full cookie string from the cookies collected by
+  // the in-app login window (legacy split fields are also accepted)
   if (providerId === 'mimo') {
     console.log('[mapOAuthCredentials] Processing Mimo credentials')
-    const result: Record<string, string> = {}
-    
-    if (credentials['serviceToken']) {
-      result['service_token'] = credentials['serviceToken']
-      console.log('[mapOAuthCredentials] Mapped serviceToken -> service_token')
-    } else if (credentials['service_token']) {
-      result['service_token'] = credentials['service_token']
-      console.log('[mapOAuthCredentials] Using existing service_token')
+    const collectedCookies: Record<string, string> = {}
+    const rawCookies = (credentials as Record<string, unknown>)['cookies']
+    if (rawCookies && typeof rawCookies === 'object') {
+      for (const [name, value] of Object.entries(rawCookies as Record<string, unknown>)) {
+        if (typeof value === 'string' && value) collectedCookies[name] = value
+      }
     }
-    
-    if (credentials['userId']) {
-      result['user_id'] = credentials['userId']
-      console.log('[mapOAuthCredentials] Mapped userId -> user_id')
-    } else if (credentials['user_id']) {
-      result['user_id'] = credentials['user_id']
-      console.log('[mapOAuthCredentials] Using existing user_id')
+    if (Object.keys(collectedCookies).length === 0) {
+      const sources: Array<[string, string]> = [
+        ['xiaomichatbot_serviceToken', 'xiaomichatbot_serviceToken'],
+        ['serviceToken', 'serviceToken'],
+        ['service_token', 'serviceToken'],
+        ['userId', 'userId'],
+        ['user_id', 'userId'],
+        ['xiaomichatbot_ph', 'xiaomichatbot_ph'],
+        ['ph_token', 'xiaomichatbot_ph'],
+      ]
+      for (const [key, cookieName] of sources) {
+        const value = credentials[key]
+        if (value && !collectedCookies[cookieName]) collectedCookies[cookieName] = value
+      }
     }
-    
-    if (credentials['xiaomichatbot_ph']) {
-      result['ph_token'] = credentials['xiaomichatbot_ph']
-      console.log('[mapOAuthCredentials] Mapped xiaomichatbot_ph -> ph_token')
-    } else if (credentials['ph_token']) {
-      result['ph_token'] = credentials['ph_token']
-      console.log('[mapOAuthCredentials] Using existing ph_token')
+
+    const cookieString = Object.entries(collectedCookies)
+      .map(([name, value]) => `${name}=${value}`)
+      .join('; ')
+
+    console.log('[mapOAuthCredentials] Mimo cookie composed with entries:', Object.keys(collectedCookies))
+    if (cookieString) {
+      return { cookie: cookieString }
     }
-    
-    console.log('[mapOAuthCredentials] Mimo result:', JSON.stringify(result, null, 2))
-    return result
+    return credentials
+  }
+
+  // New web-session providers: build a full cookie string for the proxy
+  // adapter from the cookies collected by the in-app login window
+  if (providerId === 'chatgpt' || providerId === 'gemini' || providerId === 'grok' || providerId === 'doubao') {
+    if (providerId === 'chatgpt') {
+      const rawAuth = credentials['authorization'] || credentials['token'] || ''
+      const token = rawAuth.replace(/^Bearer\s+/i, '').trim()
+      if (token) {
+        return { token }
+      }
+      return credentials
+    }
+
+    const collectedCookies: Record<string, string> = {}
+    const rawCookies = (credentials as Record<string, unknown>)['cookies']
+    if (rawCookies && typeof rawCookies === 'object') {
+      for (const [name, value] of Object.entries(rawCookies as Record<string, unknown>)) {
+        if (typeof value === 'string' && value) collectedCookies[name] = value
+      }
+    }
+    if (Object.keys(collectedCookies).length === 0) {
+      const preferredNames: Record<string, string[]> = {
+        gemini: ['__Secure-1PSID', '__Secure-1PSIDTS', 'SAPISID', 'SID', 'HSID', 'SSID', 'APISID'],
+        grok: ['sso', 'sso-rw'],
+        doubao: ['sessionid', 'sessionid_ss', 'sid_tt', 'uid_tt', 'ttwid'],
+      }
+      for (const name of preferredNames[providerId] || []) {
+        const value = credentials[name]
+        if (value) collectedCookies[name] = value
+      }
+    }
+
+    const cookieString = Object.entries(collectedCookies)
+      .map(([name, value]) => `${name}=${value}`)
+      .join('; ')
+
+    if (cookieString) {
+      return { cookie: cookieString }
+    }
+    return credentials
   }
 
   console.log('[mapOAuthCredentials] No special mapping needed, returning as-is')
@@ -206,252 +257,13 @@ export function AddProviderDialog({
     }
   }
 
-  const DEFAULT_BUILTIN_PROVIDERS: BuiltinProviderConfig[] = [
-    {
-      id: 'chatgpt',
-      name: t('chatgpt.name'),
-      type: 'builtin',
-      authType: 'token',
-      apiEndpoint: 'https://chatgpt.com',
-      enabled: true,
-      description: t('chatgpt.description'),
-      supportedModels: ['Auto', 'GPT-5', 'GPT-5-2', 'GPT-5-3', 'GPT-5-3-Mini', 'GPT-5-Mini'],
-      modelMappings: {
-        'Auto': 'auto',
-        'GPT-5': 'gpt-5',
-        'GPT-5-2': 'gpt-5-2',
-        'GPT-5-3': 'gpt-5-3',
-        'GPT-5-3-Mini': 'gpt-5-3-mini',
-        'GPT-5-Mini': 'gpt-5-mini',
-      },
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'text/event-stream',
-        'Origin': 'https://chatgpt.com',
-        'Referer': 'https://chatgpt.com/',
-        'OAI-Language': 'en-US',
-      },
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      credentialFields: [
-        {
-          name: 'token',
-          label: t('chatgpt.accessToken'),
-          type: 'password',
-          required: true,
-          placeholder: t('chatgpt.tokenPlaceholder'),
-          helpText: t('chatgpt.tokenHelp'),
-        },
-      ],
-    },
-    {
-      id: 'deepseek',
-      name: t('deepseek.name'),
-      type: 'builtin',
-      authType: 'userToken',
-      apiEndpoint: 'https://chat.deepseek.com/api',
-      enabled: true,
-      description: t('deepseek.description'),
-      supportedModels: ['deepseek-v4-flash', 'deepseek-v4-pro'],
-      modelMappings: {
-        'deepseek-v4-flash': 'deepseek-v4-flash',
-        'deepseek-v4-pro': 'deepseek-v4-pro',
-      },
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': '*/*',
-        'Origin': 'https://chat.deepseek.com',
-        'Referer': 'https://chat.deepseek.com/',
-      },
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      credentialFields: [
-        {
-          name: 'token',
-          label: t('deepseek.userToken'),
-          type: 'password',
-          required: true,
-          placeholder: t('deepseek.userTokenPlaceholder'),
-          helpText: t('deepseek.userTokenHelp'),
-        },
-      ],
-    },
-    {
-      id: 'glm',
-      name: t('glm.name'),
-      type: 'builtin',
-      authType: 'refresh_token',
-      apiEndpoint: 'https://chatglm.cn/api',
-      enabled: true,
-      description: t('glm.description'),
-      supportedModels: ['GLM-5.1'],
-      modelMappings: {
-        'GLM-5.1': 'glm-5.1',
-      },
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'text/event-stream',
-        'Origin': 'https://chatglm.cn',
-        'Referer': 'https://chatglm.cn/',
-      },
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      credentialFields: [
-        {
-          name: 'refresh_token',
-          label: t('glm.refreshToken'),
-          type: 'password',
-          required: true,
-          placeholder: t('glm.refreshTokenPlaceholder'),
-          helpText: t('glm.refreshTokenHelp'),
-        },
-      ],
-    },
-    {
-      id: 'kimi',
-      name: t('kimi.name'),
-      type: 'builtin',
-      authType: 'jwt',
-      apiEndpoint: 'https://www.kimi.com',
-      enabled: true,
-      description: t('kimi.description'),
-      supportedModels: ['Kimi-K2.6'],
-      modelMappings: {
-        'Kimi-K2.6': 'kimi-k2.6',
-      },
-      headers: {
-        'Content-Type': 'application/connect+json',
-        'Accept': '*/*',
-        'Origin': 'https://www.kimi.com',
-        'Referer': 'https://www.kimi.com/',
-      },
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      credentialFields: [
-        {
-          name: 'token',
-          label: t('kimi.accessToken'),
-          type: 'password',
-          required: true,
-          placeholder: t('kimi.accessTokenPlaceholder'),
-          helpText: t('kimi.accessTokenHelp'),
-        },
-      ],
-    },
-    {
-      id: 'minimax',
-      name: t('minimax.name'),
-      type: 'builtin',
-      authType: 'jwt',
-      apiEndpoint: 'https://agent.minimaxi.com',
-      enabled: true,
-      description: t('minimax.description'),
-      supportedModels: ['MiniMax-M3', 'MiniMax-M2.7'],
-      modelMappings: {
-        'MiniMax-M3': 'MiniMax-M3',
-        'MiniMax-M2.7': 'MiniMax-M2.7',
-      },
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Origin': 'https://agent.minimaxi.com',
-        'Referer': 'https://agent.minimaxi.com/',
-      },
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      credentialFields: [
-        {
-          name: 'token',
-          label: t('minimax.token'),
-          type: 'password',
-          required: true,
-          placeholder: t('minimax.tokenPlaceholder'),
-          helpText: t('minimax.tokenHelp'),
-        },
-        {
-          name: 'realUserID',
-          label: t('minimax.realUserID'),
-          type: 'text',
-          required: false,
-          placeholder: t('minimax.realUserIDPlaceholder'),
-          helpText: t('minimax.realUserIDHelp'),
-        },
-      ],
-    },
-    {
-      id: 'qwen',
-      name: t('qwen.name'),
-      type: 'builtin',
-      authType: 'tongyi_sso_ticket',
-      apiEndpoint: 'https://chat2.qianwen.com',
-      enabled: true,
-      description: t('qwen.description'),
-      supportedModels: ['Qwen3.6', 'Qwen3.7-Max', 'Qwen3.5-Flash', 'Qwen3-Max', 'Qwen3-Max-Thinking-Preview', 'Qwen3-Coder'],
-      modelMappings: {
-        'Qwen3.6': 'Qwen',
-        'Qwen3.7-Max': 'Qwen3.7-Max',
-        'Qwen3.5-Flash': 'Qwen3.5-Flash',
-        'Qwen3-Max': 'Qwen3-Max',
-        'Qwen3-Max-Thinking-Preview': 'Qwen3-Max-Thinking-Preview',
-        'Qwen3-Coder': 'Qwen3-Coder',
-      },
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream, text/plain, */*',
-        'Origin': 'https://www.qianwen.com',
-        'Referer': 'https://www.qianwen.com/',
-      },
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      credentialFields: [
-        {
-          name: 'ticket',
-          label: t('qwen.ssoTicket'),
-          type: 'password',
-          required: true,
-          placeholder: t('qwen.ssoTicketPlaceholder'),
-          helpText: t('qwen.ssoTicketHelp'),
-        },
-      ],
-    },
-    {
-      id: 'perplexity',
-      name: t('perplexity.name'),
-      type: 'builtin',
-      authType: 'cookie',
-      apiEndpoint: 'https://www.perplexity.ai',
-      enabled: true,
-      description: t('perplexity.description'),
-      supportedModels: [
-        'Auto',
-        'Turbo',
-        'PPLX-Pro',
-        'GPT-5',
-        'Gemini-2.5-Pro',
-        'Claude-Sonnet-4',
-        'Claude-Opus-4',
-        'Nemotron',
-      ],
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': '*/*',
-        'Origin': 'https://www.perplexity.ai',
-        'Referer': 'https://www.perplexity.ai/',
-      },
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      credentialFields: [
-        {
-          name: 'sessionToken',
-          label: t('perplexity.sessionToken'),
-          type: 'password',
-          required: true,
-          placeholder: t('perplexity.sessionTokenPlaceholder'),
-          helpText: t('perplexity.sessionTokenHelp'),
-        },
-      ],
-    },
-  ]
+  // Fallback for when the builtin provider list from the main process has not
+  // loaded yet (or electronAPI is unavailable). Derived from the same
+  // source-of-truth configs the proxy uses, so the model lists can never
+  // drift out of sync with the built-in providers.
+  const DEFAULT_BUILTIN_PROVIDERS: BuiltinProviderConfig[] = builtinProviderConfigs.map(
+    (config) => ({ ...config, createdAt: 0, updatedAt: 0 })
+  )
 
   const providers = builtinProviders.length > 0 ? builtinProviders : DEFAULT_BUILTIN_PROVIDERS
 
@@ -472,7 +284,7 @@ export function AddProviderDialog({
     ? providers.find((p) => p.id === selectedProvider) 
     : null
 
-  const supportsOAuth = selectedProviderData && ['deepseek', 'glm', 'kimi', 'mimo', 'minimax', 'qwen', 'qwen-ai', 'zai', 'perplexity'].includes(selectedProviderData.id)
+  const supportsOAuth = selectedProviderData && ['chatgpt', 'deepseek', 'doubao', 'gemini', 'glm', 'grok', 'kimi', 'mimo', 'minimax', 'qwen', 'qwen-ai', 'zai', 'perplexity'].includes(selectedProviderData.id)
 
   const toggleModelExpansion = (providerId: string) => {
     setExpandedModels(prev => {
@@ -738,20 +550,10 @@ export function AddProviderDialog({
                 },
               },
               mimo: {
-                service_token: {
-                  label: t('mimo.serviceToken'),
-                  placeholder: t('mimo.serviceTokenPlaceholder'),
-                  helpText: t('mimo.serviceTokenHelp'),
-                },
-                user_id: {
-                  label: t('mimo.userId'),
-                  placeholder: t('mimo.userIdPlaceholder'),
-                  helpText: t('mimo.userIdHelp'),
-                },
-                ph_token: {
-                  label: t('mimo.phToken'),
-                  placeholder: t('mimo.phTokenPlaceholder'),
-                  helpText: t('mimo.phTokenHelp'),
+                cookie: {
+                  label: t('mimo.cookie'),
+                  placeholder: t('mimo.cookiePlaceholder'),
+                  helpText: t('mimo.cookieHelp'),
                 },
               },
               perplexity: {
@@ -759,6 +561,13 @@ export function AddProviderDialog({
                   label: t('perplexity.sessionToken'),
                   placeholder: t('perplexity.sessionTokenPlaceholder'),
                   helpText: t('perplexity.sessionTokenHelp'),
+                },
+              },
+              doubao: {
+                cookie: {
+                  label: t('doubao.cookie'),
+                  placeholder: t('doubao.cookiePlaceholder'),
+                  helpText: t('doubao.cookieHelp'),
                 },
               },
               gemini: {

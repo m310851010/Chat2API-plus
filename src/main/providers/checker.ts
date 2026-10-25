@@ -151,12 +151,17 @@ export class ProviderChecker {
         return this.checkQwenAiToken(account.credentials.token)
       case 'perplexity':
         return this.checkPerplexityToken(account.credentials.sessionToken || account.credentials.token)
-      case 'mimo':
-        return this.checkMimoToken(
-          account.credentials.service_token,
-          account.credentials.user_id,
-          account.credentials.ph_token
-        )
+      case 'mimo': {
+        // Legacy accounts store three split fields; compose them back into a cookie string
+        const credentials = account.credentials
+        const legacyParts: string[] = []
+        if (credentials.service_token) legacyParts.push(`serviceToken=${credentials.service_token}`)
+        if (credentials.user_id) legacyParts.push(`userId=${credentials.user_id}`)
+        if (credentials.ph_token) legacyParts.push(`xiaomichatbot_ph=${credentials.ph_token}`)
+        return this.checkMimoCookie(account.credentials.cookie || legacyParts.join('; '))
+      }
+      case 'doubao':
+        return this.checkDoubaoCookie(account.credentials.cookie || account.credentials.sessionToken || '')
       case 'gemini':
         return this.checkGeminiCookie(account.credentials.cookie || '')
       case 'grok':
@@ -169,13 +174,33 @@ export class ProviderChecker {
     }
   }
 
-  private static checkMimoToken(
-    serviceToken: string,
-    userId: string,
-    phToken: string
-  ): TokenCheckResult {
-    if (!serviceToken || !userId || !phToken) {
-      return { valid: false, error: 'Missing required credentials: service_token, user_id, ph_token' }
+  private static checkMimoCookie(cookie: string): TokenCheckResult {
+    const parseCookieValue = (name: string): string => {
+      for (const pair of cookie.split(';')) {
+        const eq = pair.indexOf('=')
+        if (eq !== -1 && pair.slice(0, eq).trim() === name) {
+          const value = pair.slice(eq + 1).trim()
+          if (value.length > 1 && value.startsWith('"') && value.endsWith('"')) {
+            return value.slice(1, -1)
+          }
+          return value
+        }
+      }
+      return ''
+    }
+
+    const missing: string[] = []
+    if (!parseCookieValue('xiaomichatbot_serviceToken') && !parseCookieValue('serviceToken')) {
+      missing.push('serviceToken (or xiaomichatbot_serviceToken)')
+    }
+    if (!parseCookieValue('xiaomichatbot_ph')) {
+      missing.push('xiaomichatbot_ph')
+    }
+    if (!cookie || missing.length > 0) {
+      return {
+        valid: false,
+        error: `Cookie is missing required entries: ${missing.join(', ')}. Sign in at https://aistudio.xiaomimimo.com and paste the full cookie string.`,
+      }
     }
 
     return {
@@ -240,6 +265,71 @@ export class ProviderChecker {
         finish(0, String(error))
       }
     })
+  }
+
+  private static async checkDoubaoCookie(cookie: string): Promise<TokenCheckResult> {
+    try {
+      if (!cookie || !cookie.includes('=')) {
+        return { valid: false, error: 'Cookie is empty or malformed' }
+      }
+
+      if (!/(^|;\s*)sessionid(_ss)?\s*=/.test(cookie)) {
+        return { valid: false, error: 'Cookie must contain the sessionid (or sessionid_ss) entry' }
+      }
+
+      // ByteDance's passport account/info endpoint rejects doubao sessions
+      // (error_code 16 "该应用无权限"), so it cannot be used to verify login.
+      // The /chat/ page instead embeds the signed-in user block
+      // ("user_id_str":"<uid>"); logged-out responses only carry "user_id":0.
+      const { status, body } = await this.electronNetGet(
+        'https://www.doubao.com/chat/',
+        {
+          'Cookie': cookie,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Referer': 'https://www.doubao.com/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+        }
+      )
+
+      if (status === 0) {
+        return { valid: false, error: `Network error: ${body || 'request failed'}` }
+      }
+
+      if (status !== 200) {
+        return {
+          valid: false,
+          error: `Doubao returned HTTP ${status}; cookie may be invalid or expired`,
+        }
+      }
+
+      if (/"user_id_str":"\d+"/.test(body)) {
+        let name: string | undefined
+        const nameMatch = body.match(/"screen_name":"((?:[^"\\]|\\.)*)","sec_user_id"/)
+        if (nameMatch) {
+          try {
+            name = JSON.parse(`"${nameMatch[1]}"`)
+          } catch {
+            name = nameMatch[1]
+          }
+        }
+        return {
+          valid: true,
+          userInfo: {
+            name: name || 'Doubao User',
+          },
+        }
+      }
+
+      return {
+        valid: false,
+        error: 'Cookie is invalid or expired (session not recognized by Doubao)',
+      }
+    } catch (error) {
+      return {
+        valid: false,
+        error: error instanceof Error ? error.message : 'Cookie validation failed',
+      }
+    }
   }
 
   private static async checkGeminiCookie(cookie: string): Promise<TokenCheckResult> {

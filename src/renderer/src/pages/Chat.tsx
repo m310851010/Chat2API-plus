@@ -105,7 +105,7 @@ export function Chat() {
               <div
                 ref={scrollRef}
                 onScroll={handleScroll}
-                className="h-full overflow-y-auto px-4 py-4 space-y-4"
+                className="h-full overflow-y-auto overflow-x-hidden px-4 py-4 space-y-4"
               >
                 {messages.map((message) => (
                   <MessageItem

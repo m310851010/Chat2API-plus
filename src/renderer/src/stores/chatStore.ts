@@ -233,35 +233,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadProviders: async () => {
     let options: ChatModelOption[] | null = null
 
-    // Preferred: load model list from the local proxy /v1/models API
-    try {
-      const { proxyPort, proxyHost } = get()
-      const authHeader = await getAuthProviderHeader()
-      const response = await fetch(`http://${proxyHost}:${proxyPort}/v1/models`, {
-        headers: authHeader ? { Authorization: authHeader } : {},
-      })
-      if (response.ok) {
-        const json = await response.json()
-        const data = Array.isArray(json?.data)
-          ? (json.data as Array<{ id?: string; owned_by?: string }>)
-          : []
-        const seen = new Set<string>()
-        options = []
-        for (const model of data) {
-          const id = typeof model?.id === 'string' ? model.id : ''
-          const owner = typeof model?.owned_by === 'string' && model.owned_by ? model.owned_by : 'unknown'
-          if (!id || seen.has(id)) continue
-          seen.add(id)
-          options.push({
-            key: `proxy:${owner}:${id}`,
-            label: `${id} (${owner})`,
-            value: id,
-            providerId: owner,
-          })
+    // Preferred: load model list from the local proxy /v1/models API.
+    // Skip entirely when the proxy is stopped — the IPC fallback below covers it.
+    const { proxyRunning } = get()
+    if (proxyRunning) {
+      try {
+        const { proxyPort, proxyHost } = get()
+        const authHeader = await getAuthProviderHeader()
+        const response = await fetch(`http://${proxyHost}:${proxyPort}/v1/models`, {
+          headers: authHeader ? { Authorization: authHeader } : {},
+        })
+        if (response.ok) {
+          const json = await response.json()
+          const data = Array.isArray(json?.data)
+            ? (json.data as Array<{ id?: string; owned_by?: string }>)
+            : []
+          const seen = new Set<string>()
+          options = []
+          for (const model of data) {
+            const id = typeof model?.id === 'string' ? model.id : ''
+            const owner = typeof model?.owned_by === 'string' && model.owned_by ? model.owned_by : 'unknown'
+            if (!id || seen.has(id)) continue
+            seen.add(id)
+            options.push({
+              key: `proxy:${owner}:${id}`,
+              label: `${id} (${owner})`,
+              value: id,
+              providerId: owner,
+            })
+          }
         }
+      } catch (error) {
+        console.info('[ChatStore] Proxy model API unreachable, using IPC fallback:', error)
       }
-    } catch (error) {
-      console.error('[ChatStore] Failed to load models from proxy API:', error)
     }
 
     // Fallback: load effective models of enabled providers via IPC

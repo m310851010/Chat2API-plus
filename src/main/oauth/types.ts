@@ -211,10 +211,11 @@ export const MANUAL_TOKEN_CONFIGS: Record<ProviderType, ManualTokenConfig[]> = {
   mimo: [
     {
       providerType: 'mimo',
-      tokenType: 'access',
-      label: 'Tokens',
-      placeholder: 'Enter service token / user ID / PH token',
-      description: 'Use OAuth Login tab to sign in and extract serviceToken, userId and PH_TOKEN automatically',
+      tokenType: 'cookie',
+      label: 'Cookie',
+      placeholder: 'Paste the full aistudio.xiaomimimo.com cookie string',
+      description:
+        'Sign in at https://aistudio.xiaomimimo.com, then copy the full cookie string from DevTools (must include xiaomichatbot_serviceToken / serviceToken and xiaomichatbot_ph)',
       helpUrl: 'https://aistudio.xiaomimimo.com',
     },
   ],
@@ -236,6 +237,16 @@ export const MANUAL_TOKEN_CONFIGS: Record<ProviderType, ManualTokenConfig[]> = {
       placeholder: 'Paste Perplexity cookies or import HAR file',
       description: 'Get cookies from perplexity.ai browser DevTools or import HAR file',
       helpUrl: 'https://www.perplexity.ai',
+    },
+  ],
+  doubao: [
+    {
+      providerType: 'doubao',
+      tokenType: 'cookie',
+      label: 'Cookies',
+      placeholder: 'Paste the full doubao.com cookie string or paste HAR file',
+      description: 'Sign in to www.doubao.com in a browser and paste the full cookie string from DevTools (Application > Cookies)',
+      helpUrl: 'https://www.doubao.com',
     },
   ],
   gemini: [
