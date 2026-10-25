@@ -29,10 +29,35 @@ export function resolveDeepSeekChatOptions(
   }
 }
 
-export type KimiScenario = 'SCENARIO_K2D5' | 'SCENARIO_K2D6'
+export interface KimiChatModelOptions {
+  scenario: string
+  modelId?: string
+  kimiPlusId?: string
+}
 
-export function resolveKimiScenario(model: string): KimiScenario {
-  return model.toLowerCase().includes('k2.6') ? 'SCENARIO_K2D6' : 'SCENARIO_K2D5'
+// Scenario/model values mirror the web client's GetAvailableModels config
+// (k3-agent / k28-agent-preview run under the OK Computer agent scenario and
+// require the ok-computer kimiplus id; k2d6-chat is the default chat model).
+export function resolveKimiChatModel(model: string): KimiChatModelOptions {
+  const modelLower = model.toLowerCase()
+  if (modelLower.includes('k3')) {
+    return {
+      scenario: 'SCENARIO_OK_COMPUTER',
+      modelId: 'k3-agent',
+      kimiPlusId: 'ok-computer',
+    }
+  }
+  if (modelLower.includes('k2.8') || modelLower.includes('k28')) {
+    return {
+      scenario: 'SCENARIO_OK_COMPUTER',
+      modelId: 'k28-agent-preview',
+      kimiPlusId: 'ok-computer',
+    }
+  }
+  if (modelLower.includes('k2.6') || modelLower.includes('k2d6')) {
+    return { scenario: 'SCENARIO_K2D6' }
+  }
+  return { scenario: 'SCENARIO_CHAT', modelId: 'k2d6-chat' }
 }
 
 export function createKimiChatPayload(options: {
@@ -41,11 +66,13 @@ export function createKimiChatPayload(options: {
   enableWebSearch: boolean
   enableThinking: boolean
 }) {
-  const scenario = resolveKimiScenario(options.model)
+  const chatModel = resolveKimiChatModel(options.model)
+  const scenario = chatModel.scenario
 
   return {
     scenario,
     chat_id: '',
+    ...(chatModel.kimiPlusId ? { kimiplusId: chatModel.kimiPlusId } : {}),
     tools: options.enableWebSearch ? [{ type: 'TOOL_TYPE_SEARCH', search: {} }] : [],
     message: {
       parent_id: '',
@@ -57,7 +84,8 @@ export function createKimiChatPayload(options: {
       scenario,
     },
     options: {
-      thinking: options.enableThinking
+      thinking: options.enableThinking,
+      ...(chatModel.modelId ? { model: chatModel.modelId } : {}),
     }
   }
 }

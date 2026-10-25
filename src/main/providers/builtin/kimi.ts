@@ -25,11 +25,15 @@ export const kimiConfig: BuiltinProviderConfig = {
     'Priority': 'u=1, i',
   },
   enabled: true,
-  description: 'Kimi K2.6 AI assistant by Moonshot, supports thinking mode and web search',
+  description: 'Kimi AI assistant by Moonshot (K3 / K2.8 Preview / K2.6), supports thinking mode and web search',
   supportedModels: [
+    'Kimi-K3',
+    'Kimi-K2.8-Preview',
     'Kimi-K2.6',
   ],
   modelMappings: {
+    'Kimi-K3': 'kimi-k3',
+    'Kimi-K2.8-Preview': 'kimi-k28-preview',
     'Kimi-K2.6': 'kimi-k2.6',
   },
   credentialFields: [
@@ -39,7 +43,15 @@ export const kimiConfig: BuiltinProviderConfig = {
       type: 'password',
       required: true,
       placeholder: '请输入 Kimi 访问令牌或刷新令牌',
-      helpText: '浏览器 Cookie 中的 kimi-auth 字段值（推荐），或 JWT Token / refresh_token',
+      helpText: '网页版实时 Access Token（推荐从 DevTools -> Network 中 /apiv2/ 请求的 Authorization: Bearer 值获取），或 Cookie 中的 kimi-auth',
+    },
+    {
+      name: 'refresh_token',
+      label: '刷新令牌（可选）',
+      type: 'password',
+      required: false,
+      placeholder: '请输入 Kimi Refresh Token（可选）',
+      helpText: '可选。填写后 Access Token 过期时会自动续期。从网页版 DevTools -> Application -> Local Storage -> www.kimi.com -> refresh_token 获取',
     },
   ],
   tokenCheckEndpoint: '/api/auth/token/refresh',

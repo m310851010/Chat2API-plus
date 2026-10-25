@@ -621,6 +621,11 @@ function CredentialFieldsForm({ fields, credentials, onChange, t, providerId }: 
           placeholder: t('kimi.accessTokenPlaceholder'),
           helpText: t('kimi.accessTokenHelp'),
         },
+        refresh_token: {
+          label: t('kimi.refreshToken'),
+          placeholder: t('kimi.refreshTokenPlaceholder'),
+          helpText: t('kimi.refreshTokenHelp'),
+        },
       },
       minimax: {
         token: {
