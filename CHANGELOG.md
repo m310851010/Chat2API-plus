@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Kimi: new K3 / K2.8 Preview models** — `Kimi-K3` (flagship) and `Kimi-K2.8-Preview` join `Kimi-K2.6` in the built-in model list; both new models run under the web client's `SCENARIO_OK_COMPUTER` agent scenario with the `ok-computer` kimiplus id, while `Kimi-K2.6` keeps `SCENARIO_K2D6` and any other model falls back to `SCENARIO_CHAT` (`k2d6-chat`) (`resolveKimiChatModel` in `providerModelOptions.ts`)
+- **Kimi: optional Refresh Token credential field** — accounts can store a `refresh_token` (Local Storage `refresh_token` on www.kimi.com) so expired access tokens renew automatically; provider docs and UI help text updated in English and Chinese
+
+### Changed
+
+- **Kimi Access Token help text now points to the live web token** — recommended source is the `Authorization: Bearer` value of any `/apiv2/` request in DevTools -> Network, instead of the `kimi-auth` cookie
+
+### Fixed
+
+- **Kimi Access Tokens renew automatically instead of failing mid-conversation** — token expiry is checked locally (JWT `exp`) before sending and during validation; expired tokens or a server-side 401 (revoked session, e.g. re-login elsewhere) trigger one renewal via the `auth.kimi.com` RefreshToken endpoint and the request is retried. Renewed credentials (access + refresh token) are persisted back to the account so restarts keep working. Validation surfaces the server's error message and gives a specific hint when no refresh token is configured
+
 ## [1.5.0] - 2026-10-26
 
 ### Added

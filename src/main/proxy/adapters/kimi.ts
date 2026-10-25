@@ -5,6 +5,7 @@
 
 import axios, { AxiosResponse } from 'axios'
 import { Account, Provider } from '../../store/types'
+import { storeManager } from '../../store/store'
 import { PassThrough } from 'stream'
 import { toolsToSystemPrompt, TOOL_WRAP_HINT, hasToolPromptInjected } from '../utils/tools'
 import { parseToolCallsFromText } from '../utils/toolParser'
@@ -15,6 +16,7 @@ import { ToolStreamParser } from '../toolCalling/ToolStreamParser'
 import type { ToolCallingPlan } from '../toolCalling/types'
 
 const KIMI_API_BASE = 'https://www.kimi.com'
+const KIMI_AUTH_API_BASE = 'https://auth.kimi.com'
 
 const FAKE_HEADERS: Record<string, string> = {
   Accept: '*/*',
@@ -89,6 +91,21 @@ function extractUserIdFromJWT(token: string): string | undefined {
   }
 }
 
+function parseJWTPayload(token: string): { exp?: number; sub?: string } | null {
+  if (!token.startsWith('eyJ')) return null
+  try {
+    return JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString())
+  } catch (e) {
+    return null
+  }
+}
+
+function isJWTExpired(token: string): boolean {
+  const payload = parseJWTPayload(token)
+  if (!payload?.exp) return false
+  return Date.now() >= payload.exp * 1000
+}
+
 function checkResult(result: AxiosResponse, refreshToken: string): any {
   if (result.status === 401) {
     accessTokenMap.delete(refreshToken)
@@ -134,6 +151,12 @@ export class KimiAdapter {
 
     if (tokenType === 'jwt') {
       const userId = extractUserIdFromJWT(this.token) || ''
+
+      if (isJWTExpired(this.token)) {
+        const accessToken = await this.refreshAccessToken()
+        return { accessToken, userId: extractUserIdFromJWT(accessToken) || userId }
+      }
+
       accessTokenMap.set(this.token, {
         accessToken: this.token,
         refreshToken: this.token,
@@ -152,6 +175,78 @@ export class KimiAdapter {
       refreshTime: unixTimestamp() + 300,
     })
     return { accessToken: this.token, userId: '' }
+  }
+
+  private getRefreshToken(): string {
+    return this.account.credentials.refresh_token || this.account.credentials.refreshToken || ''
+  }
+
+  /**
+   * Renew the access token via Kimi auth service.
+   * Persisted back to the account so subsequent app starts use the new token.
+   */
+  private async refreshAccessToken(): Promise<string> {
+    const refreshToken = this.getRefreshToken()
+    if (!refreshToken) {
+      throw new Error('Kimi Access Token 已过期，且未配置 Refresh Token。请重新获取 Access Token（DevTools -> Network 中 /apiv2/ 请求的 Authorization: Bearer 值），或在账号凭据中填写 Refresh Token 以自动续期')
+    }
+
+    console.log('[Kimi] Access token expired, refreshing via auth service...')
+    const response = await axios.post(
+      `${KIMI_AUTH_API_BASE}/api/account.gateway.v1.AuthService/RefreshToken`,
+      { refresh_token: refreshToken },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Connect-Protocol-Version': '1',
+          ...FAKE_HEADERS,
+        },
+        timeout: 15000,
+        validateStatus: () => true,
+      }
+    )
+
+    if (response.status !== 200 || !response.data) {
+      const message = response.data?.message || response.data?.error?.message || `HTTP ${response.status}`
+      console.error('[Kimi] Token refresh failed:', response.status, JSON.stringify(response.data))
+      throw new Error(`Kimi Refresh Token 续期失败: ${message}。Refresh Token 可能已失效，请重新登录网页版获取`)
+    }
+
+    // Server uses proto field names (snake_case); accept camelCase as fallback
+    const data = response.data
+    const accessToken: string = data.access_token || data.accessToken || ''
+    const newRefreshToken: string = data.refresh_token || data.refreshToken || refreshToken
+
+    if (!accessToken) {
+      throw new Error('Kimi Token refresh failed: no access_token in response')
+    }
+
+    const payload = parseJWTPayload(accessToken)
+    const expiresAtMs = payload?.exp ? payload.exp * 1000 - 60_000 : Date.now() + 25 * 24 * 3600 * 1000
+    accessTokenMap.set(this.token, {
+      accessToken,
+      refreshToken: newRefreshToken,
+      userId: payload?.sub || '',
+      refreshTime: Math.floor(expiresAtMs / 1000),
+    })
+
+    try {
+      const updated = storeManager.updateAccount(this.account.id, {
+        credentials: {
+          ...this.account.credentials,
+          token: accessToken,
+          refresh_token: newRefreshToken,
+        },
+      })
+      if (updated) {
+        console.log('[Kimi] Refreshed credentials persisted to store')
+      }
+    } catch (error) {
+      console.error('[Kimi] Failed to persist refreshed credentials:', error)
+    }
+
+    console.log('[Kimi] Token refresh successful')
+    return accessToken
   }
 
   private messagesPrepare(messages: KimiMessage[], toolsPrompt?: string, isMultiTurn: boolean = false): string {
@@ -334,7 +429,34 @@ export class KimiAdapter {
 
     console.log('[Kimi] Request body length:', frameBuffer.length, 'JSON length:', frameBuffer.length - 5)
 
-    const response = await axios.post(
+    let response = await this.sendChatRequest(accessToken, frameBuffer)
+
+    console.log('[Kimi] Completion response status:', response.status)
+
+    // Access token can be revoked server-side before its JWT expiry
+    // (e.g. re-login elsewhere); refresh once and retry before giving up.
+    if (response.status === 401 && this.getRefreshToken()) {
+      console.log('[Kimi] Got 401, attempting token refresh and retry')
+      accessTokenMap.delete(this.token)
+      const renewedToken = await this.refreshAccessToken()
+      response = await this.sendChatRequest(renewedToken, frameBuffer)
+      console.log('[Kimi] Retry response status:', response.status)
+    }
+
+    if (response.status === 401) {
+      accessTokenMap.delete(this.token)
+      throw new Error('Token invalid or expired')
+    }
+
+    if (response.status !== 200) {
+      throw new Error(`Completion request failed: HTTP ${response.status}`)
+    }
+
+    return { response, conversationId: '' }
+  }
+
+  private sendChatRequest(accessToken: string, frameBuffer: Buffer): Promise<AxiosResponse> {
+    return axios.post(
       `${KIMI_API_BASE}/apiv2/kimi.gateway.chat.v1.ChatService/Chat`,
       frameBuffer,
       {
@@ -348,19 +470,6 @@ export class KimiAdapter {
         responseType: 'stream',
       }
     )
-
-    console.log('[Kimi] Completion response status:', response.status)
-
-    if (response.status === 401) {
-      accessTokenMap.delete(this.token)
-      throw new Error('Token invalid or expired')
-    }
-
-    if (response.status !== 200) {
-      throw new Error(`Completion request failed: HTTP ${response.status}`)
-    }
-
-    return { response, conversationId: '' }
   }
 
   async deleteConversation(conversationId: string): Promise<boolean> {

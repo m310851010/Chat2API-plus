@@ -311,10 +311,18 @@
   },
   "kimi": {
     "name": "Kimi",
-    "description": "Kimi AI 助手，支持长文本处理和联网搜索",
+    "description": "Kimi AI 助手（K3 / K2.8 Preview / K2.6），支持深度思考和联网搜索",
     "accessToken": "访问令牌",
     "accessTokenPlaceholder": "请输入 Kimi 访问令牌或刷新令牌",
-    "accessTokenHelp": "浏览器 Cookie 中的 kimi-auth 字段值（推荐），也可使用 JWT Token 或 refresh_token"
+    "accessTokenHelp": "网页版实时 Access Token（推荐从 DevTools -> Network 中 /apiv2/ 请求的 Authorization: Bearer 值获取），或 Cookie 中的 kimi-auth",
+    "refreshToken": "刷新令牌（可选）",
+    "refreshTokenPlaceholder": "请输入 Kimi Refresh Token（可选）",
+    "refreshTokenHelp": "可选。填写后 Access Token 过期时会自动续期。从网页版 DevTools -> Application -> Local Storage -> www.kimi.com -> refresh_token 获取",
+    "models": {
+      "Kimi-K3": "Kimi K3（旗舰，智能体）",
+      "Kimi-K2.8-Preview": "Kimi K2.8 Preview（预览版）",
+      "Kimi-K2.6": "Kimi K2.6"
+    }
   },
   "minimax": {
     "name": "MiniMax",

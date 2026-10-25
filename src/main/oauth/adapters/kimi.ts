@@ -16,6 +16,7 @@ import {
 } from '../types'
 
 const KIMI_API_BASE = 'https://www.kimi.com'
+const KIMI_AUTH_API_BASE = 'https://auth.kimi.com'
 
 const FAKE_HEADERS = {
   Accept: '*/*',
@@ -293,10 +294,50 @@ export class KimiAdapter extends BaseOAuthAdapter {
   }
 
   /**
-   * Refresh token - Kimi no longer supports refresh token API
+   * Refresh token - renews the access token via Kimi auth service
    */
   async refreshToken(credentials: Record<string, string>): Promise<CredentialInfo | null> {
-    return null
+    const refreshToken = credentials.refresh_token || credentials.refreshToken || ''
+    if (!refreshToken) {
+      return null
+    }
+
+    try {
+      const response = await axios.post(
+        `${KIMI_AUTH_API_BASE}/api/account.gateway.v1.AuthService/RefreshToken`,
+        { refresh_token: refreshToken },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Connect-Protocol-Version': '1',
+            ...FAKE_HEADERS,
+          },
+          timeout: 15000,
+          validateStatus: () => true,
+        }
+      )
+
+      if (response.status !== 200 || !response.data) {
+        return null
+      }
+
+      const accessToken = response.data.access_token || response.data.accessToken || ''
+      const newRefreshToken = response.data.refresh_token || response.data.refreshToken || refreshToken
+      if (!accessToken) {
+        return null
+      }
+
+      const payload = this.parseJWT(accessToken)
+      const exp = payload?.exp as number | undefined
+      return {
+        type: 'jwt',
+        value: accessToken,
+        expiresAt: exp ? exp * 1000 : undefined,
+        refreshToken: newRefreshToken,
+      }
+    } catch {
+      return null
+    }
   }
 
   /**

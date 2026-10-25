@@ -311,10 +311,18 @@
   },
   "kimi": {
     "name": "Kimi",
-    "description": "Kimi AI assistant, supports long text processing and web search",
+    "description": "Kimi AI assistant (K3 / K2.8 Preview / K2.6), supports thinking mode and web search",
     "accessToken": "Access Token",
     "accessTokenPlaceholder": "Enter Kimi Access Token or Refresh Token",
-    "accessTokenHelp": "The kimi-auth value from browser cookies (recommended), or JWT Token / refresh_token"
+    "accessTokenHelp": "The live web Access Token (recommended: the Authorization: Bearer value of any /apiv2/ request in DevTools -> Network), or the kimi-auth cookie",
+    "refreshToken": "Refresh Token (optional)",
+    "refreshTokenPlaceholder": "Enter Kimi Refresh Token (optional)",
+    "refreshTokenHelp": "Optional. When set, expired Access Tokens are renewed automatically. Get it from the web app: DevTools -> Application -> Local Storage -> www.kimi.com -> refresh_token",
+    "models": {
+      "Kimi-K3": "Kimi K3 (flagship, agent)",
+      "Kimi-K2.8-Preview": "Kimi K2.8 Preview",
+      "Kimi-K2.6": "Kimi K2.6"
+    }
   },
   "minimax": {
     "name": "MiniMax",

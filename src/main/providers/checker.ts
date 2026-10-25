@@ -139,7 +139,10 @@ export class ProviderChecker {
       case 'glm':
         return this.checkGLMToken(account.credentials.refresh_token)
       case 'kimi':
-        return this.checkKimiToken(account.credentials.token)
+        return this.checkKimiToken(
+          account.credentials.token,
+          account.credentials.refresh_token || account.credentials.refreshToken
+        )
       case 'minimax':
         return this.checkMiniMaxToken(
           account.credentials.realUserID || '',
@@ -645,10 +648,31 @@ export class ProviderChecker {
     return { timestamp, nonce, sign }
   }
 
-  private static async checkKimiToken(token: string): Promise<TokenCheckResult> {
+  private static async checkKimiToken(token: string, refreshToken?: string): Promise<TokenCheckResult> {
     try {
       console.log('[Kimi] Validating Token:', token.substring(0, 20) + '...')
-      
+
+      // Fail fast on locally-decodable JWT expiry before hitting the server.
+      // With a refresh token available, renew first and validate the new token.
+      const jwtPayload = this.parseKimiJWTPayload(token)
+      if (jwtPayload?.exp && Date.now() >= jwtPayload.exp * 1000) {
+        if (refreshToken) {
+          console.log('[Kimi] Access token expired, renewing via refresh token before validation')
+          const renewed = await this.refreshKimiToken(refreshToken)
+          if (renewed.valid && renewed.token) {
+            return this.checkKimiToken(renewed.token)
+          }
+          return {
+            valid: false,
+            error: `Access Token 已过期，且 Refresh Token 续期失败：${renewed.error || '未知错误'}。请重新登录网页版获取`,
+          }
+        }
+        return {
+          valid: false,
+          error: `Token 已于 ${new Date(jwtPayload.exp * 1000).toISOString()} 过期，请从浏览器重新获取（推荐 DevTools -> Network 中 /apiv2/ 请求的 Authorization: Bearer 值），或填写 Refresh Token 以自动续期`,
+        }
+      }
+
       const response = await axios.post(
         'https://www.kimi.com/apiv2/kimi.gateway.order.v1.SubscriptionService/GetSubscription',
         {},
@@ -678,7 +702,23 @@ export class ProviderChecker {
         }
       }
       
-      return { valid: false, error: 'Token expired or invalid' }
+      // Server-side invalidation (revoked session) can happen before JWT expiry;
+      // try one refresh before reporting failure.
+      if (response.status === 401 && refreshToken) {
+        console.log('[Kimi] Got 401 on validation, attempting refresh')
+        const renewed = await this.refreshKimiToken(refreshToken)
+        if (renewed.valid && renewed.token) {
+          return this.checkKimiToken(renewed.token)
+        }
+      }
+
+      const serverMessage = response.data?.message
+      return {
+        valid: false,
+        error: serverMessage
+          ? `Token expired or invalid (${serverMessage})`
+          : 'Token expired or invalid',
+      }
     } catch (error) {
       console.error('[Kimi] Validation error:', error)
       return {
@@ -686,6 +726,57 @@ export class ProviderChecker {
         error: error instanceof AxiosError 
           ? error.message 
           : 'Connection failed',
+      }
+    }
+  }
+
+  private static parseKimiJWTPayload(token: string): { exp?: number; iat?: number } | null {
+    if (!token.startsWith('eyJ')) return null
+    try {
+      const payloadPart = token.split('.')[1]
+      return JSON.parse(Buffer.from(payloadPart, 'base64').toString('utf8'))
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Renew a Kimi access token via the auth service.
+   * Returns the new access token on success, or an error description.
+   */
+  private static async refreshKimiToken(refreshToken: string): Promise<{ valid: boolean; token?: string; error?: string }> {
+    try {
+      const response = await axios.post(
+        'https://auth.kimi.com/api/account.gateway.v1.AuthService/RefreshToken',
+        { refresh_token: refreshToken },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Connect-Protocol-Version': '1',
+            'Accept': '*/*',
+            'Origin': 'https://www.kimi.com',
+            'Referer': 'https://www.kimi.com/',
+          },
+          timeout: CHECK_TIMEOUT,
+          validateStatus: () => true,
+        }
+      )
+
+      if (response.status !== 200 || !response.data) {
+        const message = response.data?.message || response.data?.error?.message || `HTTP ${response.status}`
+        return { valid: false, error: message }
+      }
+
+      const accessToken = response.data.access_token || response.data.accessToken || ''
+      if (!accessToken) {
+        return { valid: false, error: 'no access_token in refresh response' }
+      }
+
+      return { valid: true, token: accessToken }
+    } catch (error) {
+      return {
+        valid: false,
+        error: error instanceof AxiosError ? error.message : 'Refresh request failed',
       }
     }
   }
