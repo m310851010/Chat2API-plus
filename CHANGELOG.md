@@ -5,25 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.5.0] - 2026-10-26
 
 ### Added
 
 - **Kimi: new K3 / K2.8 Preview models** — `Kimi-K3` (flagship) and `Kimi-K2.8-Preview` join `Kimi-K2.6` in the built-in model list; both new models run under the web client's `SCENARIO_OK_COMPUTER` agent scenario with the `ok-computer` kimiplus id, while `Kimi-K2.6` keeps `SCENARIO_K2D6` and any other model falls back to `SCENARIO_CHAT` (`k2d6-chat`) (`resolveKimiChatModel` in `providerModelOptions.ts`)
 - **Kimi: optional Refresh Token credential field** — accounts can store a `refresh_token` (Local Storage `refresh_token` on www.kimi.com) so expired access tokens renew automatically; provider docs and UI help text updated in English and Chinese
-
-### Changed
-
-- **Kimi Access Token help text now points to the live web token** — recommended source is the `Authorization: Bearer` value of any `/apiv2/` request in DevTools -> Network, instead of the `kimi-auth` cookie
-
-### Fixed
-
-- **Kimi Access Tokens renew automatically instead of failing mid-conversation** — token expiry is checked locally (JWT `exp`) before sending and during validation; expired tokens or a server-side 401 (revoked session, e.g. re-login elsewhere) trigger one renewal via the `auth.kimi.com` RefreshToken endpoint and the request is retried. Renewed credentials (access + refresh token) are persisted back to the account so restarts keep working. Validation surfaces the server's error message and gives a specific hint when no refresh token is configured
-
-## [1.5.0] - 2026-10-26
-
-### Added
-
 - **New providers: ChatGPT, Gemini, Grok**
   - ChatGPT: web-based `gpt-5` family models (`auto`, `gpt-5`, `gpt-5-1`, `gpt-5-2`, `gpt-5-3`, `gpt-5-3-mini`, `gpt-5-mini`) via Access Token, with dedicated PoW / Turnstile / browser-impersonation support (`chatgpt-pow.ts`, `chatgpt-turnstile.ts`, `chatgpt-proxy.ts`)
   - Gemini: web-based Flash / Thinking / Pro models via the StreamGenerate protocol, Cookie auth
@@ -40,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Kimi Access Token help text now points to the live web token** — recommended source is the `Authorization: Bearer` value of any `/apiv2/` request in DevTools -> Network, instead of the `kimi-auth` cookie
 - Project rebranded to **Chat2API Plus** (product name, repository links, updater target)
 - GLM provider model list refreshed: `GLM-5.1` replaced by `GLM-5.3` and `GLM-5.3-flash` ([GLM-5.3 docs](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3))
 - **Mimo credentials switched to a single full Cookie string** — instead of three split fields (`service_token` / `user_id` / `ph_token`), accounts now paste the complete `aistudio.xiaomimimo.com` cookie (help text and placeholders include the login URL https://aistudio.xiaomimimo.com); the proxy sends the whole string as the `Cookie` header and derives `xiaomichatbot_ph` from it for the chat URL query. Legacy accounts with the three split fields keep working (they are composed back into a cookie string)
@@ -51,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Kimi Access Tokens renew automatically instead of failing mid-conversation** — token expiry is checked locally (JWT `exp`) before sending and during validation; expired tokens or a server-side 401 (revoked session, e.g. re-login elsewhere) trigger one renewal via the `auth.kimi.com` RefreshToken endpoint and the request is retried. Renewed credentials (access + refresh token) are persisted back to the account so restarts keep working. Validation surfaces the server's error message and gives a specific hint when no refresh token is configured
 - **Built-in providers created through the UI now include the built-in `modelMappings`** — `providers:add` (and the management API create) used to build the persisted provider without `modelMappings` / `chatPath`, so a freshly added provider forwarded display names verbatim (e.g. Mimo `MiMo-V2.6-Flash` instead of `mimo-v2.6-flash`) and upstream rejected it with "模型名称错误" until the app was restarted. Provider object construction is now centralized in `providerFactory.ts`, which fills missing fields from the built-in configuration when the id matches (regression test: `tests/providers/provider-factory.test.ts`)
 - **Built-in provider definitions are re-applied on startup** — `authType` and `credentialFields` are now taken from the built-in config (legacy persisted definitions kept rendering removed fields, e.g. the old three Mimo credential fields), while `supportedModels` keep user overrides and fresh dynamic lists
 - **Mimo chat switched to the current `react/chat` protocol** — the legacy `/open-apis/bot/chat` endpoint now replies with an upgrade notice ("平台升级啦，请「刷新页面」畅享更好的体验！"), verified live: chats go to `POST /open-apis/react/chat` (404 falls back to the legacy endpoint, mirroring the web client); reasoning now arrives as a dedicated `reasoningContent` SSE field (mapped straight to OpenAI `reasoning_content`, `<think>` tag parsing kept for the fallback path); v3 top-level `usage` counters (`promptTokens`/`completionTokens`/`totalTokens` + `nativeUsage` reasoning tokens) are captured for both stream and non-stream modes; upstream `error` events surface as visible content instead of being silently treated as an answer
