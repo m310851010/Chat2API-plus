@@ -22,6 +22,8 @@
   "chat": {
     "newChat": "New Chat",
     "history": "History",
+    "collapseHistory": "Collapse history",
+    "expandHistory": "Expand history",
     "noHistory": "No chat history yet",
     "untitled": "New Chat",
     "deleteConversation": "Delete conversation",
@@ -39,6 +41,7 @@
     "noModels": "No available models\nPlease add providers and models first",
     "generating": "Generating…",
     "thinking": "Thinking",
+    "thinkingActive": "Thinking…",
     "copied": "Copied",
     "copy": "Copy",
     "you": "You",
@@ -301,7 +304,7 @@
   },
   "glm": {
     "name": "GLM",
-    "description": "Zhipu Qingyan AI Assistant, supports GLM-5.1 flagship model, deep thinking and web search",
+    "description": "Zhipu Qingyan AI Assistant, supports GLM-5.3 flagship model, deep thinking and web search",
     "refreshToken": "Refresh Token",
     "refreshTokenPlaceholder": "Enter chatglm_refresh_token",
     "refreshTokenHelp": "Get chatglm_refresh_token from Zhipu Qingyan web version, found in browser DevTools Application -> Cookie"
@@ -367,7 +370,7 @@
   },
   "zai": {
     "name": "Z.ai",
-    "description": "Z.ai - Free AI Chatbot powered by GLM-5.1, GLM-5, and GLM-4.7",
+    "description": "Z.ai - Free AI Chatbot powered by GLM-5.3, GLM-5.3-flash, and GLM-5.2",
     "token": "Access Token",
     "tokenPlaceholder": "Enter Z.ai JWT Token",
     "tokenHelp": "Get token from Z.ai web version, found in browser DevTools Application -> Cookie, starts with \"eyJ...\""
@@ -375,15 +378,9 @@
   "mimo": {
     "name": "Mimo",
     "description": "XiaomiMIMO - Xiaomi General Intelligence Foundation Model",
-    "serviceToken": "Service Token",
-    "serviceTokenPlaceholder": "Enter serviceToken",
-    "serviceTokenHelp": "Get from browser DevTools -> Application -> Cookies -> serviceToken",
-    "userId": "User ID",
-    "userIdPlaceholder": "Enter userId",
-    "userIdHelp": "Get from browser DevTools -> Application -> Cookies -> userId",
-    "phToken": "PH Token",
-    "phTokenPlaceholder": "Enter xiaomichatbot_ph",
-    "phTokenHelp": "Get from browser DevTools -> Application -> Cookies -> xiaomichatbot_ph"
+    "cookie": "Cookie",
+    "cookiePlaceholder": "Paste the full cookie string from https://aistudio.xiaomimimo.com",
+    "cookieHelp": "Open https://aistudio.xiaomimimo.com and sign in, then copy the full cookie string from DevTools (Application > Cookies, or the Cookie request header in Network). Must include xiaomichatbot_serviceToken (or serviceToken) and xiaomichatbot_ph"
   },
   "perplexity": {
     "name": "Perplexity",
@@ -399,6 +396,13 @@
     "cookie": "Cookie",
     "cookiePlaceholder": "Enter the full Gemini cookie string",
     "cookieHelp": "Open https://gemini.google.com and sign in, then copy the full cookie string from DevTools (Application > Cookies > https://gemini.google.com). Must include SID, HSID, SSID, APISID, SAPISID, __Secure-1PSID."
+  },
+  "doubao": {
+    "name": "Doubao",
+    "description": "ByteDance Doubao web-based models (chat / deep think)",
+    "cookie": "Cookie",
+    "cookiePlaceholder": "Enter the full doubao.com cookie string",
+    "cookieHelp": "Open https://www.doubao.com and sign in, then copy the full Cookie string from DevTools (Application > Cookies > www.doubao.com). Must include sessionid"
   },
   "grok": {
     "name": "Grok",

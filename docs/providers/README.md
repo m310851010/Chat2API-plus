@@ -5,6 +5,7 @@
 | Provider ID | 文档 |
 | --- | --- |
 | deepseek | [DeepSeek](deepseek.md) |
+| doubao | [Doubao](doubao.md) |
 | glm | [GLM](glm.md) |
 | kimi | [Kimi](kimi.md) |
 | minimax | [MiniMax](minimax.md) |

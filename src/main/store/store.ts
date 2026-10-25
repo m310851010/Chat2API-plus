@@ -43,6 +43,10 @@ import { normalizeToolCallingConfig } from '../../shared/toolCalling'
 import { AppLogManager } from '../appLogs/manager'
 import type { AppLogFilter } from '../appLogs/types'
 
+// Dynamically fetched model lists older than this are treated as stale on
+// startup and the built-in list is re-applied (see initializeDefaultProviders)
+const DYNAMIC_MODELS_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
 // Dynamically import electron-store (ESM module)
 let Store: any = null
 
@@ -308,16 +312,13 @@ class StoreManager {
             }
           }
 
-          return {
+          return { 
             ...p, 
             apiEndpoint: builtinConfig.apiEndpoint,
             chatPath: builtinConfig.chatPath,
             supportedModels: builtinConfig.supportedModels,
             modelMappings: builtinConfig.modelMappings,
             headers: builtinConfig.headers,
-            credentialFields: builtinConfig.credentialFields,
-            description: builtinConfig.description,
-          }
         }
       }
       return p

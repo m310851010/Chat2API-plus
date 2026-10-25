@@ -5,6 +5,7 @@
 
 import { storeManager } from './store'
 import { Provider, ProviderType, AuthType, BUILTIN_PROVIDERS } from './types'
+import { createProviderFromData, type ProviderCreationData } from '../providers/providerFactory.ts'
 
 /**
  * Provider Manager Class
@@ -57,27 +58,9 @@ export class ProviderManager {
    * @param data Provider data
    * @returns Created provider
    */
-  static create(data: {
-    name: string
-    authType: AuthType
-    apiEndpoint: string
-    headers?: Record<string, string>
-    description?: string
-    icon?: string
-    supportedModels?: string[]
-    credentialFields?: Array<{
-      name: string
-      label: string
-      type: 'text' | 'password' | 'textarea'
-      required: boolean
-      placeholder?: string
-      helpText?: string
-    }>
-    type?: ProviderType
-    id?: string
-  }): Provider {
+  static create(data: ProviderCreationData): Provider {
     const existing = storeManager.getProviders()
-    
+
     // Check if provider with same ID already exists (built-in provider)
     if (data.id) {
       const existingById = existing.find(p => p.id === data.id)
@@ -85,12 +68,12 @@ export class ProviderManager {
         return existingById
       }
     }
-    
+
     // Check if provider with same name already exists
     const nameExists = existing.some(
       (p) => p.name.toLowerCase() === data.name.toLowerCase()
     )
-    
+
     if (nameExists) {
       const existingByName = existing.find(
         (p) => p.name.toLowerCase() === data.name.toLowerCase()
@@ -99,25 +82,10 @@ export class ProviderManager {
         return existingByName
       }
     }
-    
+
     const now = Date.now()
-    const provider: Provider = {
-      id: data.id || storeManager.generateId(),
-      name: data.name,
-      type: data.type || 'custom',
-      authType: data.authType,
-      apiEndpoint: data.apiEndpoint,
-      chatPath: data.chatPath,
-      headers: data.headers || {},
-      enabled: true,
-      createdAt: now,
-      updatedAt: now,
-      description: data.description,
-      icon: data.icon,
-      supportedModels: data.supportedModels,
-      credentialFields: data.credentialFields,
-    }
-    
+    const provider: Provider = createProviderFromData(data, data.id || storeManager.generateId(), now)
+
     storeManager.addProvider(provider)
     
     storeManager.addLog('info', `Create provider: ${provider.name}`, {

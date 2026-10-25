@@ -1,19 +1,9 @@
 import { storeManager } from '../store/store'
 import type { Provider, AuthType } from '../../shared/types'
 import type { CredentialField } from '../store/types'
+import { createProviderFromData, type ProviderCreationData } from './providerFactory.ts'
 
-export interface CustomProviderData {
-  id?: string
-  name: string
-  type?: 'builtin' | 'custom'
-  authType: AuthType
-  apiEndpoint: string
-  headers?: Record<string, string>
-  description?: string
-  icon?: string
-  supportedModels?: string[]
-  credentialFields?: CredentialField[]
-}
+export interface CustomProviderData extends ProviderCreationData {}
 
 export interface CustomProviderValidation {
   valid: boolean
@@ -169,22 +159,15 @@ export class CustomProviderManager {
     }
     
     const now = Date.now()
-    const provider: Provider = {
-      id: data.id || storeManager.generateId(),
+    const trimmedData: ProviderCreationData = {
+      ...data,
       name: data.name.trim(),
-      type: data.type || 'custom',
-      authType: data.authType,
       apiEndpoint: data.apiEndpoint.trim(),
-      headers: data.headers || {},
-      enabled: true,
-      createdAt: now,
-      updatedAt: now,
       description: data.description?.trim(),
       icon: data.icon?.trim(),
-      supportedModels: data.supportedModels || [],
-      credentialFields: data.credentialFields,
     }
-    
+    const provider: Provider = createProviderFromData(trimmedData, data.id || storeManager.generateId(), now)
+
     storeManager.addProvider(provider)
     
     storeManager.addLog('info', `Created provider: ${provider.name}`, {

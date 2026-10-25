@@ -47,7 +47,6 @@ function mapOAuthCredentials(providerId: string | undefined, credentials: Record
     'qwen-ai': 'tongyi_sso_ticket',
     'zai': 'tongyi_sso_ticket',
     'perplexity': '__Secure-next-auth.session-token',
-    'mimo': 'serviceToken',
   }
 
   const providerFieldNames: Record<string, string> = {
@@ -57,7 +56,6 @@ function mapOAuthCredentials(providerId: string | undefined, credentials: Record
     'qwen-ai': 'ticket',
     'zai': 'ticket',
     'perplexity': 'sessionToken',
-    'mimo': 'service_token',
   }
 
   const oauthKey = credentialKeyMap[providerId]
@@ -88,27 +86,81 @@ function mapOAuthCredentials(providerId: string | undefined, credentials: Record
     return { sessionToken: credentials['next-auth.session-token'] }
   }
 
-  // For Mimo, map all three tokens
+  // For Mimo, compose the full cookie string from the cookies collected by
+  // the in-app login window (legacy split fields are also accepted)
   if (providerId === 'mimo') {
-    const result: Record<string, string> = {}
-    // OAuth already returns credentials in correct format (service_token, user_id, ph_token)
-    // Check for final format first
-    if (credentials['service_token']) {
-      result['service_token'] = credentials['service_token']
-    } else if (credentials['serviceToken']) {
-      result['service_token'] = credentials['serviceToken']
+    const collectedCookies: Record<string, string> = {}
+    const rawCookies = (credentials as Record<string, unknown>)['cookies']
+    if (rawCookies && typeof rawCookies === 'object') {
+      for (const [name, value] of Object.entries(rawCookies as Record<string, unknown>)) {
+        if (typeof value === 'string' && value) collectedCookies[name] = value
+      }
     }
-    if (credentials['user_id']) {
-      result['user_id'] = credentials['user_id']
-    } else if (credentials['userId']) {
-      result['user_id'] = credentials['userId']
+    if (Object.keys(collectedCookies).length === 0) {
+      const sources: Array<[string, string]> = [
+        ['xiaomichatbot_serviceToken', 'xiaomichatbot_serviceToken'],
+        ['serviceToken', 'serviceToken'],
+        ['service_token', 'serviceToken'],
+        ['userId', 'userId'],
+        ['user_id', 'userId'],
+        ['xiaomichatbot_ph', 'xiaomichatbot_ph'],
+        ['ph_token', 'xiaomichatbot_ph'],
+      ]
+      for (const [key, cookieName] of sources) {
+        const value = credentials[key]
+        if (value && !collectedCookies[cookieName]) collectedCookies[cookieName] = value
+      }
     }
-    if (credentials['ph_token']) {
-      result['ph_token'] = credentials['ph_token']
-    } else if (credentials['xiaomichatbot_ph']) {
-      result['ph_token'] = credentials['xiaomichatbot_ph']
+
+    const cookieString = Object.entries(collectedCookies)
+      .map(([name, value]) => `${name}=${value}`)
+      .join('; ')
+
+    if (cookieString) {
+      return { cookie: cookieString }
     }
-    return result
+    return credentials
+  }
+
+  // New web-session providers: build a full cookie string for the proxy
+  // adapter from the cookies collected by the in-app login window
+  if (providerId === 'chatgpt' || providerId === 'gemini' || providerId === 'grok' || providerId === 'doubao') {
+    if (providerId === 'chatgpt') {
+      const rawAuth = credentials['authorization'] || credentials['token'] || ''
+      const token = rawAuth.replace(/^Bearer\s+/i, '').trim()
+      if (token) {
+        return { token }
+      }
+      return credentials
+    }
+
+    const collectedCookies: Record<string, string> = {}
+    const rawCookies = (credentials as Record<string, unknown>)['cookies']
+    if (rawCookies && typeof rawCookies === 'object') {
+      for (const [name, value] of Object.entries(rawCookies as Record<string, unknown>)) {
+        if (typeof value === 'string' && value) collectedCookies[name] = value
+      }
+    }
+    if (Object.keys(collectedCookies).length === 0) {
+      const preferredNames: Record<string, string[]> = {
+        gemini: ['__Secure-1PSID', '__Secure-1PSIDTS', 'SAPISID', 'SID', 'HSID', 'SSID', 'APISID'],
+        grok: ['sso', 'sso-rw'],
+        doubao: ['sessionid', 'sessionid_ss', 'sid_tt', 'uid_tt', 'ttwid'],
+      }
+      for (const name of preferredNames[providerId] || []) {
+        const value = credentials[name]
+        if (value) collectedCookies[name] = value
+      }
+    }
+
+    const cookieString = Object.entries(collectedCookies)
+      .map(([name, value]) => `${name}=${value}`)
+      .join('; ')
+
+    if (cookieString) {
+      return { cookie: cookieString }
+    }
+    return credentials
   }
 
   return credentials
@@ -170,7 +222,7 @@ export function AddAccountDialog({
   const isEditing = !!editingAccount
   const builtinProvider = provider as BuiltinProviderConfig | null
   const credentialFields: CredentialField[] = builtinProvider?.credentialFields || getDefaultCredentialFields(provider?.authType, t)
-  const supportsOAuth = provider && ['deepseek', 'glm', 'kimi', 'mimo', 'minimax', 'qwen', 'qwen-ai', 'zai', 'perplexity'].includes(provider.id)
+  const supportsOAuth = provider && ['chatgpt', 'deepseek', 'doubao', 'gemini', 'glm', 'grok', 'kimi', 'mimo', 'minimax', 'qwen', 'qwen-ai', 'zai', 'perplexity'].includes(provider.id)
 
   useEffect(() => {
     if (open) {
@@ -609,20 +661,10 @@ function CredentialFieldsForm({ fields, credentials, onChange, t, providerId }: 
         },
       },
       mimo: {
-        service_token: {
-          label: t('mimo.serviceToken'),
-          placeholder: t('mimo.serviceTokenPlaceholder'),
-          helpText: t('mimo.serviceTokenHelp'),
-        },
-        user_id: {
-          label: t('mimo.userId'),
-          placeholder: t('mimo.userIdPlaceholder'),
-          helpText: t('mimo.userIdHelp'),
-        },
-        ph_token: {
-          label: t('mimo.phToken'),
-          placeholder: t('mimo.phTokenPlaceholder'),
-          helpText: t('mimo.phTokenHelp'),
+        cookie: {
+          label: t('mimo.cookie'),
+          placeholder: t('mimo.cookiePlaceholder'),
+          helpText: t('mimo.cookieHelp'),
         },
       },
       perplexity: {
@@ -630,6 +672,13 @@ function CredentialFieldsForm({ fields, credentials, onChange, t, providerId }: 
           label: t('perplexity.sessionToken'),
           placeholder: t('perplexity.sessionTokenPlaceholder'),
           helpText: t('perplexity.sessionTokenHelp'),
+        },
+      },
+      doubao: {
+        cookie: {
+          label: t('doubao.cookie'),
+          placeholder: t('doubao.cookiePlaceholder'),
+          helpText: t('doubao.cookieHelp'),
         },
       },
       gemini: {

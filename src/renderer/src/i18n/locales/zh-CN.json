@@ -22,6 +22,8 @@
   "chat": {
     "newChat": "新建对话",
     "history": "历史记录",
+    "collapseHistory": "收起历史记录",
+    "expandHistory": "展开历史记录",
     "noHistory": "暂无历史记录",
     "untitled": "新对话",
     "deleteConversation": "删除对话",
@@ -39,6 +41,7 @@
     "noModels": "暂无可用模型\n请先在模型管理中添加供应商和模型",
     "generating": "生成中…",
     "thinking": "思考过程",
+    "thinkingActive": "深度思考中…",
     "copied": "已复制",
     "copy": "复制",
     "you": "你",
@@ -301,7 +304,7 @@
   },
   "glm": {
     "name": "GLM",
-    "description": "智谱清言 AI 助手，支持 GLM-5.1 旗舰模型、深度思考和联网搜索",
+    "description": "智谱清言 AI 助手，支持 GLM-5.3 旗舰模型、深度思考和联网搜索",
     "refreshToken": "刷新令牌",
     "refreshTokenPlaceholder": "请输入智谱清言刷新令牌",
     "refreshTokenHelp": "从智谱清言网页版获取 chatglm_refresh_token，可在浏览器开发者工具 Application -> Cookie 中找到"
@@ -367,7 +370,7 @@
   },
   "zai": {
     "name": "Z.ai",
-    "description": "Z.ai - 免费AI聊天机器人，由 GLM-5.1、GLM-5 和 GLM-4.7 驱动",
+    "description": "Z.ai - 免费AI聊天机器人，由 GLM-5.3、GLM-5.3-flash 和 GLM-5.2 驱动",
     "token": "访问令牌",
     "tokenPlaceholder": "请输入 Z.ai JWT Token",
     "tokenHelp": "从Z.ai 网页版获取token，可在浏览器开发者工具 Application -> Cookie 中找到，以\"eyJ...\"为开头"
@@ -375,15 +378,9 @@
   "mimo": {
     "name": "Mimo",
     "description": "XiaomiMIMO - 小米通用智能基座 MiMo",
-    "serviceToken": "Service Token",
-    "serviceTokenPlaceholder": "请输入 serviceToken",
-    "serviceTokenHelp": "从浏览器 DevTools -> Application -> Cookies -> serviceToken 获取",
-    "userId": "User ID",
-    "userIdPlaceholder": "请输入 userId",
-    "userIdHelp": "从浏览器 DevTools -> Application -> Cookies -> userId 获取",
-    "phToken": "PH Token",
-    "phTokenPlaceholder": "请输入 xiaomichatbot_ph",
-    "phTokenHelp": "从浏览器 DevTools -> Application -> Cookies -> xiaomichatbot_ph 获取"
+    "cookie": "Cookie",
+    "cookiePlaceholder": "请输入登录 https://aistudio.xiaomimimo.com 后的完整 Cookie 字符串",
+    "cookieHelp": "先打开 https://aistudio.xiaomimimo.com 并登录，然后从浏览器 DevTools（Application -> Cookies 或 Network 请求头的 Cookie）复制完整 Cookie 字符串，需包含 xiaomichatbot_serviceToken（或 serviceToken）和 xiaomichatbot_ph"
   },
   "perplexity": {
     "name": "Perplexity",
@@ -399,6 +396,13 @@
     "cookie": "Cookie",
     "cookiePlaceholder": "请输入完整的 Gemini Cookie 字符串",
     "cookieHelp": "打开 https://gemini.google.com 并登录，然后在浏览器开发者工具（Application > Cookies > https://gemini.google.com）复制完整 Cookie 字符串"
+  },
+  "doubao": {
+    "name": "豆包",
+    "description": "字节跳动豆包网页版（对话 / 深度思考）",
+    "cookie": "Cookie",
+    "cookiePlaceholder": "请输入完整的 doubao.com Cookie 字符串",
+    "cookieHelp": "打开 https://www.doubao.com 并登录，然后在浏览器开发者工具（Application > Cookies > www.doubao.com）复制完整 Cookie 字符串（需包含 sessionid）"
   },
   "grok": {
     "name": "Grok",

@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Release-v1.3.0-blue?style=flat-square&logo=github" alt="Release">
+  <img src="https://img.shields.io/badge/Release-v1.5.0-blue?style=flat-square&logo=github" alt="Release">
   <img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square" alt="License">
   <br>
   <a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/Electron-33+-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron"></a>
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  Chat2API Plus 通过驱动各大模型的官方 Web UI，实现 0 成本接入主流 AI 大模型。支持 DeepSeek、GLM、Kimi、MiniMax、Qwen、Z.ai 等渠道，可无缝连接 openlcaw、Cline、Roo-Code 等工具，让任何 OpenAI 兼容客户端即刻可用。
+  Chat2API Plus 通过驱动各大模型的官方 Web UI，实现 0 成本接入主流 AI 大模型。支持 ChatGPT、Gemini、Grok、豆包、DeepSeek、GLM、Kimi、MiniMax、Perplexity、Qwen、Z.ai 等渠道，可无缝连接 openlcaw、Cline、Roo-Code 等工具，让任何 OpenAI 兼容客户端即刻可用。
 </p>
 
 ![Product Preview](docs/screenshots/preview.png)
@@ -31,7 +31,9 @@
 ## ✨ 功能特性
 
 - OpenAI 兼容 API：提供标准 OpenAI 兼容接口，无缝对接现有工具
-- 多服务商支持：支持 DeepSeek、GLM、Kimi、MiniMax、Perplexity 🆕、Qwen、Z.ai 等
+- Anthropic 兼容 API：`/v1/messages` 接受 Anthropic 格式请求（工具、系统提示词、Thinking 块），并以 Anthropic SSE 事件流式返回
+- 多服务商支持：支持 ChatGPT、Gemini、Grok、豆包、DeepSeek、GLM、Kimi、MiniMax、Perplexity、Qwen、Z.ai 等
+- 内置聊天页：应用内对话测试页面，支持会话历史、流式输出、按会话切换模型、分叉与停止生成
 - 🆕 上下文管理：智能对话上下文管理，支持滑动窗口、Token 限制和总结压缩策略
 - 🆕 工具调用支持：通过提示词工程为所有模型提供通用工具调用能力，兼容 Cherry Studio、Kilo Code 等客户端
 - 🆕 模型映射：灵活的模型名称映射，支持通配符和首选服务商/账户选择
@@ -51,12 +53,13 @@
 | ------------- | ------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ChatGPT       | Access Token  | 是     | auto, gpt-5, gpt-5-1, gpt-5-2, gpt-5-3, gpt-5-3-mini, gpt-5-mini                                                                                                                                                                              |
 | DeepSeek      | User Token    | 是     | deepseek-v4-flash, deepseek-v4-pro                                                                                                                                                                                                            |
+| Doubao        | Cookie        | 是     | doubao-pro-chat, doubao-deep-think                                                                                                                                                                                                            |
 | Gemini        | Cookie        | 是     | gemini-3.7-flash, gemini-3.6-flash, gemini-3.5-flash, gemini-3.5-flash-thinking, gemini-3.5-flash-thinking-lite, gemini-3.1-pro, gemini-auto, gemini-flash-lite                                                                                |
-| GLM           | Refresh Token | 是     | GLM-5.1                                                                                                                                                                                                                                       |
+| GLM           | Refresh Token | 是     | GLM-5.3, GLM-5.3-flash                                                                                                                                                                                                                        |
 | Grok          | Cookie        | 是     | grok-4, grok-4-fast, grok-3, grok-3-mini, grok-auto                                                                                                                                                                                           |
 | Kimi          | JWT Token     | 是     | Kimi-K2.6                                                                                                                                                                                                                                     |
 | MiniMax       | JWT Token     | 是     | MiniMax-M3, MiniMax-M2.7                                                                                                                                                                                                                      |
-| Mimo          | Cookie        | 是     | MiMo-V2.5-Pro, MiMo-V2.5, MiMo-V2-Flash                                                                                                                                                                                                       |
+| Mimo          | Cookie        | 是     | MiMo-V2.6-Flash, MiMo-V2.6-Pro, MiMo-V2.6-Pro-UltraSpeed, mimo-v2-flash, mimo-v2-pro, mimo-v2-omni, mimo-v2.5-pro, mimo-v2.5, mimo-v2-flash-studio, clawm-alpha, clawl-alpha, mimo-v2.1-omni, mimo-v2.1-omni-preview, mimo-v2.1-pro, mimo-v2.1-pro-preview |
 | Perplexity    | Cookie        | 是     | Auto                                                                                                                                                                                                                                         |
 | Qwen (国内版)    | SSO Ticket    | 是     | Qwen3.6, Qwen3.7-Max, Qwen3.5-Flash, Qwen3-Max, Qwen3-Max-Thinking-Preview, Qwen3-Coder                                                                                                                                                       |
 | Qwen AI (国际版) | JWT Token     | 是     | Qwen3.7-Max, Qwen3.6-Plus, Qwen3.6-35B-A3B, Qwen3.6-27B, Qwen3-Coder                                                                                                                                                                         |
@@ -186,7 +189,7 @@ print(response.choices[0].message.content)
 ## ⚙️ 设置选项
 
 - **端口**：更改代理监听端口（默认：8080）
-- **路由策略**：轮询（Round Robin）或填充优先（Fill First）
+- **路由策略**：轮询（Round Robin）、填充优先（Fill First）或故障转移（Failover）
 - **自动启动**：应用启动时自动启动代理
 - **主题**：浅色、深色或跟随系统
 - **语言**：英文或简体中文

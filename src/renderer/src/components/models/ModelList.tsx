@@ -35,6 +35,7 @@ import perplexityIcon from '@/assets/providers/perplexity.svg'
 import qwenIcon from '@/assets/providers/qwen.svg'
 import zaiIcon from '@/assets/providers/zai.svg'
 import geminiIcon from '@/assets/providers/gemini.svg'
+import doubaoIcon from '@/assets/providers/doubao.svg'
 import grokIcon from '@/assets/providers/grok.svg'
 import modelMappingIcon from '@/assets/providers/model-mapping.svg'
 
@@ -50,6 +51,7 @@ const providerIcons: Record<string, string> = {
   'qwen-ai': qwenIcon,
   zai: zaiIcon,
   gemini: geminiIcon,
+  doubao: doubaoIcon,
   grok: grokIcon,
   mapping: modelMappingIcon,
 }

@@ -14,13 +14,15 @@ import { ChatGPTAdapter } from './adapters/chatgpt'
 import { ChatGPTStreamHandler } from './adapters/chatgpt-stream'
 import { DeepSeekAdapter } from './adapters/deepseek'
 import { DeepSeekStreamHandler } from './adapters/deepseek-stream'
+import { DoubaoAdapter } from './adapters/doubao'
+import { DoubaoStreamHandler } from './adapters/doubao-stream'
 import { GeminiAdapter } from './adapters/gemini'
 import { GeminiStreamHandler } from './adapters/gemini-stream'
 import { GLMAdapter, GLMStreamHandler } from './adapters/glm'
 import { GrokAdapter } from './adapters/grok'
 import { GrokStreamHandler } from './adapters/grok-stream'
 import { KimiAdapter, KimiStreamHandler } from './adapters/kimi'
-import { MimoAdapter, MimoStreamHandler } from './adapters/mimo'
+import { MimoAdapter, MimoStreamHandler, MIMO_EMPTY_ANSWER_HINT } from './adapters/mimo'
 import { QwenAdapter, QwenStreamHandler } from './adapters/qwen'
 import { QwenAiAdapter, QwenAiStreamHandler } from './adapters/qwen-ai'
 import { ZaiAdapter, ZaiStreamHandler } from './adapters/zai'
@@ -74,6 +76,12 @@ export class RequestForwarder {
       matches: DeepSeekAdapter.isDeepSeekProvider,
       forward: (request, account, provider, actualModel, startTime) =>
         this.forwardDeepSeek(request, account, provider, actualModel, startTime),
+    },
+    {
+      name: 'doubao',
+      matches: DoubaoAdapter.isDoubaoProvider,
+      forward: (request, account, provider, actualModel, startTime) =>
+        this.forwardDoubao(request, account, provider, actualModel, startTime),
     },
     {
       name: 'gemini',
@@ -1243,13 +1251,16 @@ export class RequestForwarder {
       }
       const adapter = new MimoAdapter(provider, account)
 
-      const { response, conversationId, query } = await adapter.chatCompletion({
+      const mimoRequest = {
         model: actualModel,
         originalModel: request.originalModel,
         messages: transformedRequest.messages as any,
         stream: transformedRequest.stream,
         temperature: transformedRequest.temperature,
-      })
+        reasoning_effort: request.reasoning_effort,
+      }
+
+      const { response, conversationId, query } = await adapter.chatCompletion(mimoRequest)
 
       const latency = Date.now() - startTime
 
@@ -1263,17 +1274,34 @@ export class RequestForwarder {
         }
       }
 
+      // Empty-answer retries create extra conversations: keep track of them for
+      // title generation and session cleanup.
+      const sessionIds: string[] = [conversationId]
+      let titleConversationId = conversationId
+      const retryStream = async (): Promise<NodeJS.ReadableStream | null> => {
+        const retry = await adapter.chatCompletion(mimoRequest, MIMO_EMPTY_ANSWER_HINT)
+        if (retry.response.status >= 400) {
+          console.error('[Mimo] Empty-answer retry failed with HTTP', retry.response.status)
+          return null
+        }
+        titleConversationId = retry.conversationId
+        sessionIds.push(retry.conversationId)
+        return retry.response.data
+      }
+
       const deleteSessionCallback = shouldDeleteSession()
         ? async (sessionId: string) => {
             try {
-              await adapter.deleteSession(sessionId)
+              for (const id of sessionIds.length > 0 ? sessionIds : [sessionId]) {
+                await adapter.deleteSession(id)
+              }
             } catch (error) {
               console.error('[Mimo] Failed to delete session:', error)
             }
           }
         : undefined
 
-      const handler = new MimoStreamHandler(actualModel, conversationId, 'separate', transformed.plan)
+      const handler = new MimoStreamHandler(actualModel, conversationId, 'separate', transformed.plan, retryStream)
 
       if (request.stream) {
         const transformedStream = new PassThrough()
@@ -1285,7 +1313,7 @@ export class RequestForwarder {
               transformedStream.write(chunk)
             }
             await adapter.generateConversationTitle(
-              conversationId,
+              titleConversationId,
               query,
               handler.getAssistantContentForTitle()
             )
@@ -1314,7 +1342,7 @@ export class RequestForwarder {
       const parsedResult = JSON.parse(result)
       this.applyToolCallsToResponse(parsedResult, transformed)
       await adapter.generateConversationTitle(
-        conversationId,
+        titleConversationId,
         query,
         handler.getAssistantContentForTitle()
       )
@@ -1402,6 +1430,90 @@ export class RequestForwarder {
         await adapter.deleteSession(sessionId)
       }
       
+      return {
+        success: true,
+        status: 200,
+        headers: {},
+        body: result,
+        latency,
+        providerSessionId: sessionId,
+      }
+    } catch (error) {
+      const latency = Date.now() - startTime
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        latency,
+      }
+    }
+  }
+
+  /**
+   * Doubao Web Dedicated Forward
+   * Doubao web has no native function calling; tool calling goes through
+   * prompt injection (managed XML protocol) + response parsing.
+   * The provider-side conversation id arrives on the 2002 SSE event and is
+   * captured for single-session deletion (thread delete).
+   */
+  private async forwardDoubao(
+    request: ChatCompletionRequest,
+    account: Account,
+    provider: Provider,
+    actualModel: string,
+    startTime: number
+  ): Promise<ForwardResult> {
+    try {
+      const transformed = this.transformRequestForPromptToolUse(request, provider)
+
+      const adapter = new DoubaoAdapter(provider, account)
+
+      let providerConversationId = ''
+      const { stream, sessionId } = await adapter.chatCompletion({
+        model: request.model,
+        messages: transformed.messages as any,
+        stream: request.stream,
+        temperature: request.temperature,
+      })
+
+      const latency = Date.now() - startTime
+      const deleteSessionCallback = shouldDeleteSession()
+        ? async () => {
+            try {
+              await adapter.deleteSession(providerConversationId)
+            } catch (error) {
+              console.error('[Doubao] Failed to delete session:', error)
+            }
+          }
+        : undefined
+
+      const captureConversationId = (conversationId: string) => {
+        providerConversationId = conversationId
+      }
+
+      if (request.stream === true) {
+        const handler = new DoubaoStreamHandler(actualModel, sessionId, deleteSessionCallback, transformed.plan, captureConversationId)
+        const transformedStream = await handler.handleStream(stream)
+
+        return {
+          success: true,
+          status: 200,
+          headers: {},
+          stream: transformedStream as any,
+          skipTransform: true,
+          latency,
+          providerSessionId: sessionId,
+        }
+      }
+
+      const handler = new DoubaoStreamHandler(actualModel, sessionId, deleteSessionCallback, transformed.plan, captureConversationId)
+      const result = await handler.handleNonStream(stream)
+
+      this.applyToolCallsToResponse(result, transformed)
+
+      if (deleteSessionCallback) {
+        await deleteSessionCallback()
+      }
+
       return {
         success: true,
         status: 200,

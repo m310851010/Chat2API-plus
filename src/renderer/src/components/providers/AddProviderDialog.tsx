@@ -27,8 +27,11 @@ import perplexityIcon from '@/assets/providers/perplexity.svg'
 import qwenIcon from '@/assets/providers/qwen.svg'
 import zaiIcon from '@/assets/providers/zai.svg'
 import geminiIcon from '@/assets/providers/gemini.svg'
+import doubaoIcon from '@/assets/providers/doubao.svg'
 import grokIcon from '@/assets/providers/grok.svg'
 import { TextWithLinks } from '@/components/providers/TextWithLinks'
+// Pure data module (type-only dependencies) — safe to share with the renderer
+import { builtinProviders as builtinProviderConfigs } from '../../../../main/providers/builtin/index.ts'
 
 interface AddProviderDialogProps {
   open: boolean
@@ -60,6 +63,7 @@ const providerIcons: Record<string, string> = {
   'qwen-ai': qwenIcon,
   zai: zaiIcon,
   gemini: geminiIcon,
+  doubao: doubaoIcon,
   grok: grokIcon,
 }
 
@@ -118,36 +122,83 @@ function mapOAuthCredentials(providerId: string | undefined, credentials: Record
     return { sessionToken: credentials['next-auth.session-token'] }
   }
 
+  // For Mimo, compose the full cookie string from the cookies collected by
+  // the in-app login window (legacy split fields are also accepted)
   if (providerId === 'mimo') {
     console.log('[mapOAuthCredentials] Processing Mimo credentials')
-    const result: Record<string, string> = {}
-    
-    if (credentials['serviceToken']) {
-      result['service_token'] = credentials['serviceToken']
-      console.log('[mapOAuthCredentials] Mapped serviceToken -> service_token')
-    } else if (credentials['service_token']) {
-      result['service_token'] = credentials['service_token']
-      console.log('[mapOAuthCredentials] Using existing service_token')
+    const collectedCookies: Record<string, string> = {}
+    const rawCookies = (credentials as Record<string, unknown>)['cookies']
+    if (rawCookies && typeof rawCookies === 'object') {
+      for (const [name, value] of Object.entries(rawCookies as Record<string, unknown>)) {
+        if (typeof value === 'string' && value) collectedCookies[name] = value
+      }
     }
-    
-    if (credentials['userId']) {
-      result['user_id'] = credentials['userId']
-      console.log('[mapOAuthCredentials] Mapped userId -> user_id')
-    } else if (credentials['user_id']) {
-      result['user_id'] = credentials['user_id']
-      console.log('[mapOAuthCredentials] Using existing user_id')
+    if (Object.keys(collectedCookies).length === 0) {
+      const sources: Array<[string, string]> = [
+        ['xiaomichatbot_serviceToken', 'xiaomichatbot_serviceToken'],
+        ['serviceToken', 'serviceToken'],
+        ['service_token', 'serviceToken'],
+        ['userId', 'userId'],
+        ['user_id', 'userId'],
+        ['xiaomichatbot_ph', 'xiaomichatbot_ph'],
+        ['ph_token', 'xiaomichatbot_ph'],
+      ]
+      for (const [key, cookieName] of sources) {
+        const value = credentials[key]
+        if (value && !collectedCookies[cookieName]) collectedCookies[cookieName] = value
+      }
     }
-    
-    if (credentials['xiaomichatbot_ph']) {
-      result['ph_token'] = credentials['xiaomichatbot_ph']
-      console.log('[mapOAuthCredentials] Mapped xiaomichatbot_ph -> ph_token')
-    } else if (credentials['ph_token']) {
-      result['ph_token'] = credentials['ph_token']
-      console.log('[mapOAuthCredentials] Using existing ph_token')
+
+    const cookieString = Object.entries(collectedCookies)
+      .map(([name, value]) => `${name}=${value}`)
+      .join('; ')
+
+    console.log('[mapOAuthCredentials] Mimo cookie composed with entries:', Object.keys(collectedCookies))
+    if (cookieString) {
+      return { cookie: cookieString }
     }
-    
-    console.log('[mapOAuthCredentials] Mimo result:', JSON.stringify(result, null, 2))
-    return result
+    return credentials
+  }
+
+  // New web-session providers: build a full cookie string for the proxy
+  // adapter from the cookies collected by the in-app login window
+  if (providerId === 'chatgpt' || providerId === 'gemini' || providerId === 'grok' || providerId === 'doubao') {
+    if (providerId === 'chatgpt') {
+      const rawAuth = credentials['authorization'] || credentials['token'] || ''
+      const token = rawAuth.replace(/^Bearer\s+/i, '').trim()
+      if (token) {
+        return { token }
+      }
+      return credentials
+    }
+
+    const collectedCookies: Record<string, string> = {}
+    const rawCookies = (credentials as Record<string, unknown>)['cookies']
+    if (rawCookies && typeof rawCookies === 'object') {
+      for (const [name, value] of Object.entries(rawCookies as Record<string, unknown>)) {
+        if (typeof value === 'string' && value) collectedCookies[name] = value
+      }
+    }
+    if (Object.keys(collectedCookies).length === 0) {
+      const preferredNames: Record<string, string[]> = {
+        gemini: ['__Secure-1PSID', '__Secure-1PSIDTS', 'SAPISID', 'SID', 'HSID', 'SSID', 'APISID'],
+        grok: ['sso', 'sso-rw'],
+        doubao: ['sessionid', 'sessionid_ss', 'sid_tt', 'uid_tt', 'ttwid'],
+      }
+      for (const name of preferredNames[providerId] || []) {
+        const value = credentials[name]
+        if (value) collectedCookies[name] = value
+      }
+    }
+
+    const cookieString = Object.entries(collectedCookies)
+      .map(([name, value]) => `${name}=${value}`)
+      .join('; ')
+
+    if (cookieString) {
+      return { cookie: cookieString }
+    }
+    return credentials
   }
 
   console.log('[mapOAuthCredentials] No special mapping needed, returning as-is')
@@ -225,7 +276,7 @@ export function AddProviderDialog({
     ? providers.find((p) => p.id === selectedProvider) 
     : null
 
-  const supportsOAuth = selectedProviderData && ['deepseek', 'glm', 'kimi', 'mimo', 'minimax', 'qwen', 'qwen-ai', 'zai', 'perplexity'].includes(selectedProviderData.id)
+  const supportsOAuth = selectedProviderData && ['chatgpt', 'deepseek', 'doubao', 'gemini', 'glm', 'grok', 'kimi', 'mimo', 'minimax', 'qwen', 'qwen-ai', 'zai', 'perplexity'].includes(selectedProviderData.id)
 
   const toggleModelExpansion = (providerId: string) => {
     setExpandedModels(prev => {
@@ -491,20 +542,10 @@ export function AddProviderDialog({
                 },
               },
               mimo: {
-                service_token: {
-                  label: t('mimo.serviceToken'),
-                  placeholder: t('mimo.serviceTokenPlaceholder'),
-                  helpText: t('mimo.serviceTokenHelp'),
-                },
-                user_id: {
-                  label: t('mimo.userId'),
-                  placeholder: t('mimo.userIdPlaceholder'),
-                  helpText: t('mimo.userIdHelp'),
-                },
-                ph_token: {
-                  label: t('mimo.phToken'),
-                  placeholder: t('mimo.phTokenPlaceholder'),
-                  helpText: t('mimo.phTokenHelp'),
+                cookie: {
+                  label: t('mimo.cookie'),
+                  placeholder: t('mimo.cookiePlaceholder'),
+                  helpText: t('mimo.cookieHelp'),
                 },
               },
               perplexity: {
@@ -512,6 +553,13 @@ export function AddProviderDialog({
                   label: t('perplexity.sessionToken'),
                   placeholder: t('perplexity.sessionTokenPlaceholder'),
                   helpText: t('perplexity.sessionTokenHelp'),
+                },
+              },
+              doubao: {
+                cookie: {
+                  label: t('doubao.cookie'),
+                  placeholder: t('doubao.cookiePlaceholder'),
+                  helpText: t('doubao.cookieHelp'),
                 },
               },
               gemini: {

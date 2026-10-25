@@ -58,6 +58,7 @@ src/renderer/next-app/
 
 # Backup
 backup/
+.tmp-repro
 build.bat
 findings.md
 progress.md

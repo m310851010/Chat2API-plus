@@ -1,11 +1,9 @@
 /**
  * Mimo Authentication Adapter
- * Authentication method: Cookie-based authentication with in-app browser login
- * 
- * Mimo requires three tokens from cookies:
- * - serviceToken
- * - userId
- * - xiaomichatbot_ph
+ * Authentication method: full browser Cookie string from aistudio.xiaomimimo.com
+ *
+ * The cookie string must contain at least `serviceToken` (httpOnly login state)
+ * and `xiaomichatbot_ph` (per-chat query parameter).
  */
 
 import { BaseOAuthAdapter } from './base'
@@ -17,8 +15,43 @@ import {
   AdapterConfig,
   OAuthCallbackData,
 } from '../types'
+import { getMimoServiceToken, parseCookieValue } from '../../proxy/adapters/mimo'
 
 const MIMO_WEB_BASE = 'https://aistudio.xiaomimimo.com'
+
+/** Composes a full cookie string from loosely collected cookie entries. */
+export function composeMimoCookie(entries: Record<string, string>): string {
+  const nameMap: Array<[string, string]> = [
+    ['xiaomichatbot_serviceToken', 'xiaomichatbot_serviceToken'],
+    ['serviceToken', 'serviceToken'],
+    ['service_token', 'serviceToken'],
+    ['userId', 'userId'],
+    ['user_id', 'userId'],
+    ['xiaomichatbot_ph', 'xiaomichatbot_ph'],
+    ['ph_token', 'xiaomichatbot_ph'],
+  ]
+
+  const parts: string[] = []
+  for (const [sourceKey, cookieName] of nameMap) {
+    const value = entries[sourceKey]
+    if (value && !parts.some((part) => part.startsWith(`${cookieName}=`))) {
+      parts.push(`${cookieName}=${value}`)
+    }
+  }
+  return parts.join('; ')
+}
+
+/** Required entries of a usable Mimo cookie string. */
+function findMissingCookieEntries(cookie: string): string[] {
+  const missing: string[] = []
+  if (!getMimoServiceToken(cookie)) {
+    missing.push('serviceToken (or xiaomichatbot_serviceToken)')
+  }
+  if (!parseCookieValue(cookie, 'xiaomichatbot_ph')) {
+    missing.push('xiaomichatbot_ph')
+  }
+  return missing
+}
 
 export class MimoAdapter extends BaseOAuthAdapter {
   constructor(config: AdapterConfig) {
@@ -36,28 +69,22 @@ export class MimoAdapter extends BaseOAuthAdapter {
       success: false,
       providerId: options.providerId,
       providerType: 'mimo',
-      error: 'Use startInAppLogin for automatic cookie extraction or manually enter tokens',
+      error: `Use startInAppLogin for automatic cookie extraction, or paste the full cookie string from ${MIMO_WEB_BASE}`,
     }
   }
 
   async loginWithCookies(providerId: string, cookies: Record<string, string>): Promise<OAuthResult> {
     this.emitProgress('pending', 'Validating cookies...')
 
-    const serviceToken = cookies['serviceToken'] || cookies['service_token']
-    const userId = cookies['userId'] || cookies['user_id']
-    const phToken = cookies['xiaomichatbot_ph'] || cookies['ph_token']
+    const cookie = cookies.cookie || composeMimoCookie(cookies)
 
-    if (!serviceToken || !userId || !phToken) {
-      const missing = []
-      if (!serviceToken) missing.push('serviceToken')
-      if (!userId) missing.push('userId')
-      if (!phToken) missing.push('xiaomichatbot_ph')
-
+    const missing = findMissingCookieEntries(cookie)
+    if (!cookie || missing.length > 0) {
       return {
         success: false,
         providerId,
         providerType: 'mimo',
-        error: `Missing required cookies: ${missing.join(', ')}`,
+        error: `Cookie is missing required entries: ${missing.join(', ')}. Sign in at ${MIMO_WEB_BASE} and copy the full cookie string.`,
       }
     }
 
@@ -67,13 +94,9 @@ export class MimoAdapter extends BaseOAuthAdapter {
       success: true,
       providerId,
       providerType: 'mimo',
-      credentials: {
-        service_token: serviceToken,
-        user_id: userId,
-        ph_token: phToken,
-      },
+      credentials: { cookie },
       accountInfo: {
-        userId: userId,
+        userId: parseCookieValue(cookie, 'userId'),
         name: 'Mimo User',
       },
     }
@@ -84,14 +107,22 @@ export class MimoAdapter extends BaseOAuthAdapter {
   }
 
   async validateToken(credentials: Record<string, string>): Promise<TokenValidationResult> {
-    const serviceToken = credentials['service_token'] || credentials['serviceToken']
-    const userId = credentials['user_id'] || credentials['userId']
-    const phToken = credentials['ph_token'] || credentials['xiaomichatbot_ph']
+    // New single-field accounts store the full cookie string; legacy accounts
+    // keep the three split fields and are composed back into one string.
+    const cookie = (credentials.cookie || composeMimoCookie(credentials)).trim()
 
-    if (!serviceToken || !userId || !phToken) {
+    if (!cookie) {
       return {
         valid: false,
-        error: 'Missing required credentials: service_token, user_id, ph_token',
+        error: `Missing Mimo cookie. Sign in at ${MIMO_WEB_BASE} and paste the full cookie string (must include serviceToken and xiaomichatbot_ph).`,
+      }
+    }
+
+    const missing = findMissingCookieEntries(cookie)
+    if (missing.length > 0) {
+      return {
+        valid: false,
+        error: `Cookie is missing required entries: ${missing.join(', ')}`,
       }
     }
 
@@ -99,29 +130,23 @@ export class MimoAdapter extends BaseOAuthAdapter {
       valid: true,
       tokenType: 'cookie',
       accountInfo: {
-        userId: userId,
+        userId: parseCookieValue(cookie, 'userId'),
         name: 'Mimo User',
       },
     }
   }
 
   async refreshToken(credentials: Record<string, string>): Promise<CredentialInfo | null> {
-    const serviceToken = credentials['service_token'] || credentials['serviceToken']
-    const userId = credentials['user_id'] || credentials['userId']
-    const phToken = credentials['ph_token'] || credentials['xiaomichatbot_ph']
+    const cookie = (credentials.cookie || composeMimoCookie(credentials)).trim()
 
-    if (!serviceToken || !userId || !phToken) {
+    if (!cookie) {
       return null
     }
 
     return {
       type: 'cookie',
-      value: serviceToken,
-      extra: {
-        service_token: serviceToken,
-        user_id: userId,
-        ph_token: phToken,
-      },
+      value: cookie,
+      extra: { cookie },
     }
   }
 }

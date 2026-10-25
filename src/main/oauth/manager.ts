@@ -16,6 +16,8 @@ import {
   CredentialInfo,
 } from './types'
 import { createAdapter, BaseOAuthAdapter } from './adapters'
+import { composeMimoCookie } from './adapters/mimo'
+import { getMimoServiceToken, parseCookieValue } from '../proxy/adapters/mimo'
 import { storeManager } from '../store/store'
 import { inAppLoginManager, InAppLoginResult } from './inAppLogin'
 
@@ -151,22 +153,40 @@ export class OAuthManager extends EventEmitter {
       return await (adapter as any).loginWithToken(providerId, token, realUserID, mimoUserId, mimoPhToken)
     }
     
-    // For Mimo, validate with all three tokens
+    // For Mimo, the token is the full aistudio.xiaomimimo.com cookie string
+    // (legacy callers may still pass the three split fields)
     if (providerType === 'mimo') {
-      if (!mimoUserId || !mimoPhToken) {
+      if (mimoUserId && mimoPhToken) {
+        const validation = await adapter.validateToken({
+          service_token: token,
+          user_id: mimoUserId,
+          ph_token: mimoPhToken,
+        })
+
+        if (!validation.valid) {
+          return {
+            success: false,
+            providerId,
+            providerType,
+            error: validation.error || 'Token validation failed',
+          }
+        }
+
         return {
-          success: false,
+          success: true,
           providerId,
           providerType,
-          error: 'Mimo requires userId and phToken in addition to serviceToken',
+          credentials: {
+            service_token: token,
+            user_id: mimoUserId,
+            ph_token: mimoPhToken,
+          },
+          accountInfo: validation.accountInfo,
         }
       }
-      const validation = await adapter.validateToken({
-        service_token: token,
-        user_id: mimoUserId,
-        ph_token: mimoPhToken,
-      })
-      
+
+      const validation = await adapter.validateToken({ cookie: token })
+
       if (!validation.valid) {
         return {
           success: false,
@@ -175,16 +195,12 @@ export class OAuthManager extends EventEmitter {
           error: validation.error || 'Token validation failed',
         }
       }
-      
+
       return {
         success: true,
         providerId,
         providerType,
-        credentials: {
-          service_token: token,
-          user_id: mimoUserId,
-          ph_token: mimoPhToken,
-        },
+        credentials: { cookie: token },
         accountInfo: validation.accountInfo,
       }
     }
@@ -376,25 +392,25 @@ export class OAuthManager extends EventEmitter {
           }
         }
 
-        // For Mimo, we need all three tokens before validating
+        // For Mimo, wait until the cookie carries the login state (serviceToken
+        // + xiaomichatbot_ph) before validating
         if (providerType === 'mimo') {
-          const hasServiceToken = collectedTokens.serviceToken || collectedTokens.service_token
-          const hasUserId = collectedTokens.userId || collectedTokens.user_id
-          const hasPhToken = collectedTokens.xiaomichatbot_ph || collectedTokens.ph_token
+          const cookie = composeMimoCookie(collectedTokens)
+          const hasServiceToken = !!getMimoServiceToken(cookie)
+          const hasPhToken = !!parseCookieValue(cookie, 'xiaomichatbot_ph')
 
-          if (!hasServiceToken || !hasUserId || !hasPhToken) {
-            console.log('[OAuthManager] Waiting for all Mimo tokens...', {
-              hasServiceToken: !!hasServiceToken,
-              hasUserId: !!hasUserId,
-              hasPhToken: !!hasPhToken,
+          if (!hasServiceToken || !hasPhToken) {
+            console.log('[OAuthManager] Waiting for Mimo cookies...', {
+              hasServiceToken,
+              hasPhToken,
             })
-            
+
             // Clear any existing timeout
             if (validationTimeout) {
               clearTimeout(validationTimeout)
             }
 
-            // Wait 500ms for all tokens to be collected
+            // Wait 500ms for the cookies to be collected
             validationTimeout = setTimeout(() => {
               console.log('[OAuthManager] Proceeding with Mimo validation, collected tokens:', Object.keys(collectedTokens))
               validateAndComplete()
@@ -402,9 +418,9 @@ export class OAuthManager extends EventEmitter {
             return
           }
 
-          // All tokens collected, trigger validation immediately
+          // Required cookies collected, trigger validation immediately
           if (!isValidating) {
-            console.log('[OAuthManager] All Mimo tokens collected, validating...')
+            console.log('[OAuthManager] Mimo cookies collected, validating...')
             if (validationTimeout) {
               clearTimeout(validationTimeout)
             }
@@ -482,33 +498,22 @@ export class OAuthManager extends EventEmitter {
               console.log('[OAuthManager] MiniMax: Using token only (realUserID not found)')
             }
           } else if (providerType === 'mimo') {
-            const serviceToken = collectedTokens.serviceToken || collectedTokens.service_token
-            const userId = collectedTokens.userId || collectedTokens.user_id
-            const phToken = collectedTokens.xiaomichatbot_ph || collectedTokens.ph_token
+            const cookie = composeMimoCookie(collectedTokens)
 
             console.log('[OAuthManager] Mimo collectedTokens:', JSON.stringify(collectedTokens, null, 2))
-            console.log('[OAuthManager] Mimo extracted values:', { serviceToken: serviceToken?.substring(0, 20), userId, phToken: phToken?.substring(0, 20) })
 
-            if (!serviceToken || !userId || !phToken) {
-              console.log('[OAuthManager] Mimo: Missing required tokens, aborting validation')
+            if (!getMimoServiceToken(cookie) || !parseCookieValue(cookie, 'xiaomichatbot_ph')) {
+              console.log('[OAuthManager] Mimo: Missing required cookies, aborting validation')
               this.sendProgressToRenderer({
                 status: 'pending',
-                message: 'Missing required tokens, waiting for valid login...',
+                message: 'Missing required cookies (serviceToken / xiaomichatbot_ph), waiting for valid login...',
               })
               isValidating = false
               return
             }
 
-            validationCredentials = {
-              service_token: serviceToken,
-              user_id: userId,
-              ph_token: phToken,
-            }
-            finalCredentials = {
-              service_token: serviceToken,
-              user_id: userId,
-              ph_token: phToken,
-            }
+            validationCredentials = { cookie }
+            finalCredentials = { cookie }
             console.log('[OAuthManager] Mimo: Final credentials prepared:', Object.keys(finalCredentials))
           } else {
             validationCredentials = { ...collectedTokens }

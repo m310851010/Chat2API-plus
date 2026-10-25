@@ -21,6 +21,7 @@ import minimaxIcon from '@/assets/providers/minimax.svg'
 import qwenIcon from '@/assets/providers/qwen.svg'
 import zaiIcon from '@/assets/providers/zai.svg'
 import geminiIcon from '@/assets/providers/gemini.svg'
+import doubaoIcon from '@/assets/providers/doubao.svg'
 import grokIcon from '@/assets/providers/grok.svg'
 import { TextWithLinks } from '@/components/providers/TextWithLinks'
 
@@ -34,6 +35,7 @@ const providerIcons: Record<string, string> = {
   'qwen-ai': qwenIcon,
   zai: zaiIcon,
   gemini: geminiIcon,
+  doubao: doubaoIcon,
   grok: grokIcon,
 }
 

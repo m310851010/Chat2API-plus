@@ -1,5 +1,6 @@
 import chatgptConfig from './chatgpt.ts'
 import deepseekConfig from './deepseek.ts'
+import doubaoConfig from './doubao.ts'
 import geminiConfig from './gemini.ts'
 import glmConfig from './glm.ts'
 import grokConfig from './grok.ts'
@@ -15,6 +16,7 @@ import type { BuiltinProviderConfig } from '../../store/types.ts'
 export const builtinProviders: BuiltinProviderConfig[] = [
   chatgptConfig,
   deepseekConfig,
+  doubaoConfig,
   geminiConfig,
   glmConfig,
   grokConfig,
@@ -30,6 +32,7 @@ export const builtinProviders: BuiltinProviderConfig[] = [
 export const builtinProviderMap: Record<string, BuiltinProviderConfig> = {
   chatgpt: chatgptConfig,
   deepseek: deepseekConfig,
+  doubao: doubaoConfig,
   gemini: geminiConfig,
   glm: glmConfig,
   grok: grokConfig,
@@ -53,6 +56,7 @@ export function getBuiltinProviders(): BuiltinProviderConfig[] {
 export {
   chatgptConfig,
   deepseekConfig,
+  doubaoConfig,
   geminiConfig,
   glmConfig,
   grokConfig,
