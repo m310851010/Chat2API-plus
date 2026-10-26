@@ -414,10 +414,20 @@
   },
   "grok": {
     "name": "Grok",
-    "description": "xAI Grok 接口（grok-4 / grok-4-fast / grok-3）",
+    "description": "xAI Grok 接口（grok-4 / grok-4-fast / grok-3 系列）",
     "cookie": "Cookie",
     "cookiePlaceholder": "请输入完整的 grok.com Cookie 字符串",
-    "cookieHelp": "打开 https://grok.com 并登录，然后在浏览器开发者工具（Application > Cookies > https://grok.com）复制完整 Cookie 字符串"
+    "cookieHelp": "打开 https://grok.com 并登录，然后在浏览器开发者工具（Application > Cookies > https://grok.com）复制完整 Cookie 字符串",
+    "models": {
+      "grok-4": "Grok 4（旗舰）",
+      "grok-4-fast": "Grok 4 Fast（快速）",
+      "grok-4-mini": "Grok 4 Mini（轻量）",
+      "grok-4-thinking": "Grok 4 Thinking（思考）",
+      "grok-3": "Grok 3",
+      "grok-3-mini": "Grok 3 Mini（轻量）",
+      "grok-3-thinking": "Grok 3 Thinking（思考）",
+      "grok-auto": "Grok 自动选择"
+    }
   },
   "proxy": {
     "title": "代理设置",

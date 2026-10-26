@@ -19,15 +19,21 @@ export const grokConfig: BuiltinProviderConfig = {
   supportedModels: [
     'grok-4',
     'grok-4-fast',
+    'grok-4-mini',
+    'grok-4-thinking',
     'grok-3',
     'grok-3-mini',
+    'grok-3-thinking',
     'grok-auto',
   ],
   modelMappings: {
     'grok-4': 'grok-4',
     'grok-4-fast': 'grok-4-fast',
+    'grok-4-mini': 'grok-4-mini',
+    'grok-4-thinking': 'grok-4-thinking',
     'grok-3': 'grok-3',
     'grok-3-mini': 'grok-3-mini',
+    'grok-3-thinking': 'grok-3-thinking',
     'grok-auto': 'grok-auto',
   },
   credentialFields: [

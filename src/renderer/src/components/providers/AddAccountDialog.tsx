@@ -694,7 +694,7 @@ function CredentialFieldsForm({ fields, credentials, onChange, t, providerId }: 
         },
       },
       grok: {
-        token: {
+        cookie: {
           label: t('grok.cookie'),
           placeholder: t('grok.cookiePlaceholder'),
           helpText: t('grok.cookieHelp'),

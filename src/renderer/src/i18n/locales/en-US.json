@@ -414,10 +414,20 @@
   },
   "grok": {
     "name": "Grok",
-    "description": "xAI Grok interface (grok-4 / grok-4-fast / grok-3)",
+    "description": "xAI Grok interface (grok-4 / grok-4-fast / grok-3 family)",
     "cookie": "Cookie",
     "cookiePlaceholder": "Paste the full https://grok.com cookie string",
-    "cookieHelp": "Open https://grok.com and sign in, then copy the full cookie string from DevTools (Application > Cookies > https://grok.com). It must include the sso value."
+    "cookieHelp": "Open https://grok.com and sign in, then copy the full cookie string from DevTools (Application > Cookies > https://grok.com). It must include the sso value.",
+    "models": {
+      "grok-4": "Grok 4 (flagship)",
+      "grok-4-fast": "Grok 4 Fast",
+      "grok-4-mini": "Grok 4 Mini",
+      "grok-4-thinking": "Grok 4 Thinking",
+      "grok-3": "Grok 3",
+      "grok-3-mini": "Grok 3 Mini",
+      "grok-3-thinking": "Grok 3 Thinking",
+      "grok-auto": "Grok Auto"
+    }
   },
   "proxy": {
     "title": "Proxy Settings",

@@ -570,7 +570,7 @@ export function AddProviderDialog({
                 },
               },
               grok: {
-                token: {
+                cookie: {
                   label: t('grok.cookie'),
                   placeholder: t('grok.cookiePlaceholder'),
                   helpText: t('grok.cookieHelp'),

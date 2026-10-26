@@ -7,21 +7,26 @@
 | API Base | https://grok.com |
 | 认证 | Cookie |
 | 凭据字段 | `cookie` |
-| 聊天协议 | `POST /rest/app-chat/conversations/new`（NDJSON） |
+| 聊天协议 | `POST /rest/app-chat/conversations/new`（NDJSON，`modelName` + `modelMode` 选择模型） |
 
 ## 默认模型
 
-| 显示名称 | 实际模型 ID |
-| --- | --- |
-| grok-4 | grok-4 |
-| grok-4-fast | grok-4-fast |
-| grok-3 | grok-3 |
-| grok-3-mini | grok-3-mini |
-| grok-auto | grok-auto |
+| 显示名称 | 实际模型 ID | 上游参数 |
+| --- | --- | --- |
+| grok-4 | grok-4 | `grok-4` + `MODEL_MODE_GROK_4` |
+| grok-4-fast | grok-4-fast | `grok-4-1-thinking-1129` + `MODEL_MODE_FAST` |
+| grok-4-mini | grok-4-mini | `grok-4-mini` + `MODEL_MODE_GROK_4_MINI_THINKING` |
+| grok-4-thinking | grok-4-thinking | `grok-4` + `MODEL_MODE_GROK_4_THINKING` |
+| grok-3 | grok-3 | `grok-3` + `MODEL_MODE_GROK_3` |
+| grok-3-mini | grok-3-mini | `grok-3` + `MODEL_MODE_GROK_3_MINI_THINKING` |
+| grok-3-thinking | grok-3-thinking | `grok-3` + `MODEL_MODE_GROK_3_THINKING` |
+| grok-auto | grok-auto | `grok-4` + `MODEL_MODE_FAST` |
 
 ## 适配状态
 
 已适配：流式对话、非流式对话、多轮会话。响应为 NDJSON 格式（每行一个 JSON 对象），由流处理器转换为 OpenAI 兼容的 SSE / 完整响应。
+
+模型选择：grok.com 已弃用旧 `modelSlug` 字段（继续发送会被上游以 `Model is not found` 拒绝），现按 `modelName` + `modelMode` 组合选择模型，`grok-4-fast` 映射到上游的 `grok-4-1-thinking-1129` + `MODEL_MODE_FAST`（协议参考 [TQZHR/grok2api](https://github.com/TQZHR/grok2api)）。
 
 Cookie 要求：粘贴完整 `grok.com` Cookie 字符串，关键 Cookie 为 `sso` / `sso-rw`；请求携带浏览器 User-Agent。
 

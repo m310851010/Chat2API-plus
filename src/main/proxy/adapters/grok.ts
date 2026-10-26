@@ -2,9 +2,11 @@
  * Grok Web Proxy Adapter
  * Forwards OpenAI chat requests to grok.com /rest/app-chat/conversations/new.
  *
- * Protocol (reverse-engineered from grok-web2api):
+ * Protocol (reverse-engineered from grok-web2api / grok2api):
  * - POST https://grok.com/rest/app-chat/conversations/new with SSO cookie
- * - Body JSON: { temporary, modelName, message, fileAttachments, ... }
+ * - Body JSON: { temporary, modelName, modelMode, message, fileAttachments, ... }
+ *   (the legacy modelSlug field is rejected with "Model is not found" — the
+ *   upstream now selects models via modelName + modelMode pairs)
  * - Response: NDJSON stream, each line JSON with
  *   result.response.{token, isThinking, messageTag, isFinished}
  *
@@ -22,16 +24,35 @@ import { getProviderToolProfile } from '../toolCalling/providerProfiles'
 const GROK_URL = 'https://grok.com'
 const CONVERSATION_ENDPOINT = `${GROK_URL}/rest/app-chat/conversations/new`
 
-const MODEL_SLUGS = new Set(['grok-4', 'grok-4-fast', 'grok-3', 'grok-3-mini', 'grok-auto'])
+interface GrokModelSelection {
+  modelName: string
+  modelMode: string
+}
+
+const MODEL_SELECTIONS: Record<string, GrokModelSelection> = {
+  'grok-3': { modelName: 'grok-3', modelMode: 'MODEL_MODE_GROK_3' },
+  'grok-3-mini': { modelName: 'grok-3', modelMode: 'MODEL_MODE_GROK_3_MINI_THINKING' },
+  'grok-3-thinking': { modelName: 'grok-3', modelMode: 'MODEL_MODE_GROK_3_THINKING' },
+  'grok-4': { modelName: 'grok-4', modelMode: 'MODEL_MODE_GROK_4' },
+  'grok-4-fast': { modelName: 'grok-4-1-thinking-1129', modelMode: 'MODEL_MODE_FAST' },
+  'grok-4-mini': { modelName: 'grok-4-mini', modelMode: 'MODEL_MODE_GROK_4_MINI_THINKING' },
+  'grok-4-thinking': { modelName: 'grok-4', modelMode: 'MODEL_MODE_GROK_4_THINKING' },
+  'grok-auto': { modelName: 'grok-4', modelMode: 'MODEL_MODE_FAST' },
+}
+
+export function resolveGrokModelSelection(model: string): GrokModelSelection {
+  if (MODEL_SELECTIONS[model]) return MODEL_SELECTIONS[model]
+  const lower = model.toLowerCase()
+  if (lower.includes('fast')) return MODEL_SELECTIONS['grok-4-fast']
+  if (lower.includes('mini')) return MODEL_SELECTIONS['grok-3-mini']
+  if (lower.includes('think')) return MODEL_SELECTIONS['grok-4-thinking']
+  if (lower.includes('auto')) return MODEL_SELECTIONS['grok-auto']
+  if (lower.includes('grok-3')) return MODEL_SELECTIONS['grok-3']
+  return MODEL_SELECTIONS['grok-4']
+}
 
 export function resolveGrokModel(model: string): string {
-  if (MODEL_SLUGS.has(model)) return model
-  const lower = model.toLowerCase()
-  if (lower.includes('fast')) return 'grok-4-fast'
-  if (lower.includes('mini')) return 'grok-3-mini'
-  if (lower.includes('grok')) return lower.startsWith('grok') ? lower : 'grok-4'
-  if (lower.includes('auto')) return 'grok-auto'
-  return 'grok-4'
+  return resolveGrokModelSelection(model).modelName
 }
 
 function extractText(content: ChatCompletionRequest['messages'][number]['content']): string {
@@ -133,11 +154,16 @@ export class GrokAdapter {
     return provider.id === 'grok' || provider.apiEndpoint.includes('grok.com')
   }
 
-  private buildRequestBody(prompt: string, modelSlug: string, conversationId?: string, temporary?: boolean): any {
+  private buildRequestBody(
+    prompt: string,
+    selection: GrokModelSelection,
+    conversationId?: string,
+    temporary?: boolean,
+  ): any {
     const body: any = {
       temporary: temporary !== undefined ? temporary : true,
-      modelSlug,
-      modelName: modelSlug,
+      modelName: selection.modelName,
+      modelMode: selection.modelMode,
       message: prompt,
       fileAttachments: [],
       imageAttachments: [],
@@ -169,7 +195,7 @@ export class GrokAdapter {
       throw new Error('No usable content in request messages')
     }
 
-    const modelSlug = resolveGrokModel(request.model)
+    const modelSelection = resolveGrokModelSelection(request.model)
     const sessionId = options.conversationId || `grok-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 
     const stream = new Readable({ read() {} })
@@ -279,7 +305,7 @@ export class GrokAdapter {
           reject(error)
         })
 
-        request_.write(JSON.stringify(this.buildRequestBody(prompt, modelSlug, options.conversationId, options.temporary)))
+        request_.write(JSON.stringify(this.buildRequestBody(prompt, modelSelection, options.conversationId, options.temporary)))
         request_.end()
       })
 
