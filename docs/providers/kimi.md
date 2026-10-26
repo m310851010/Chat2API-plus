@@ -20,9 +20,9 @@
 
 已适配：Connect JSON 对话接口、流式对话、非流式对话、多轮会话、账号级批量清理对话记录、联网搜索和思考参数。
 
-K3 / K2.8 Preview 走官网的 `SCENARIO_OK_COMPUTER` 智能体场景（kimiplus id `ok-computer`），K2.6 沿用 `SCENARIO_K2D6`，其余模型回落到 `SCENARIO_CHAT`（`k2d6-chat`）。
+K3 / K2.8 Preview 走官网的 `SCENARIO_OK_COMPUTER` 智能体场景（kimiplus id `ok-computer`，请求体额外携带顶层 `kimiplusId` 与 `options.model`，分别为 `k3-agent` / `k28-agent-preview`），K2.6 沿用 `SCENARIO_K2D6`，其余模型回落到 `SCENARIO_CHAT`（`k2d6-chat`）。场景按模型名小写子串匹配（`k3` / `k2.8` / `k28` / `k2.6` / `k2d6`），自定义模型名包含这些片段也会路由到对应场景。
 
-支持 Token 自动续期：本地解析 JWT `exp` 判断过期，过期或上游返回 401（服务端吊销，例如异地重新登录）时通过 `auth.kimi.com` 的 RefreshToken 接口用 `refresh_token` 换取新 Access Token 并重试一次，新凭据回写到账号存储，重启后仍然有效。
+支持 Token 自动续期：本地解析 JWT `exp` 判断过期，过期或上游返回 401（服务端吊销，例如异地重新登录）时通过 `auth.kimi.com` 的 RefreshToken 接口用 `refresh_token` 换取新 Access Token 并重试一次，新凭据回写到账号存储，重启后仍然有效。校验失败时会透出服务端错误信息，并在未配置 `refresh_token` 时给出具体补救提示。
 
 后续验证：官网 `ChatService` 协议字段、批量删除接口的返回格式。
 

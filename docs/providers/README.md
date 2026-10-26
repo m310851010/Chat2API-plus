@@ -4,9 +4,12 @@
 
 | Provider ID | 文档 |
 | --- | --- |
+| chatgpt | [ChatGPT](chatgpt.md) |
 | deepseek | [DeepSeek](deepseek.md) |
 | doubao | [Doubao](doubao.md) |
+| gemini | [Gemini](gemini.md) |
 | glm | [GLM](glm.md) |
+| grok | [Grok](grok.md) |
 | kimi | [Kimi](kimi.md) |
 | minimax | [MiniMax](minimax.md) |
 | mimo | [Mimo](mimo.md) |

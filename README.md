@@ -33,7 +33,8 @@
 - OpenAI Compatible API: Provides standard OpenAI-compatible API endpoints for seamless integration
 - Anthropic Compatible API: `/v1/messages` accepts Anthropic-format requests (tools, system prompts, thinking blocks) and streams Anthropic SSE events back
 - Multi-Provider Support: Connect ChatGPT, Gemini, Grok, Doubao, DeepSeek, GLM, Kimi, MiniMax, Perplexity, Qwen, Z.ai and more
-- Built-in Chat Page: In-app playground with conversation history, streaming output, per-conversation model selection, fork and stop generation
+- Built-in Chat Page: In-app playground with conversation history (collapsible sidebar), streaming output, per-conversation model selection, fork and stop generation
+- 🆕 Token Auto-Renewal (Kimi): optional Refresh Token renews expired access tokens automatically — expiry is detected locally via the JWT `exp` (or a server-side 401), the token is renewed via the `auth.kimi.com` RefreshToken endpoint and the request retried; renewed credentials are persisted back to the account
 - 🆕 Context Management: Intelligent conversation context management with sliding window, token limit, and summary strategies
 - 🆕 Function Calling Support: Universal tool calling capability for all models via prompt engineering, compatible with Cherry Studio, Kilo Code, and other clients
 - 🆕 Model Mapping: Flexible model name mapping with wildcard support and preferred provider/account selection

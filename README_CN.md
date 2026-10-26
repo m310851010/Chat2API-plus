@@ -33,7 +33,8 @@
 - OpenAI 兼容 API：提供标准 OpenAI 兼容接口，无缝对接现有工具
 - Anthropic 兼容 API：`/v1/messages` 接受 Anthropic 格式请求（工具、系统提示词、Thinking 块），并以 Anthropic SSE 事件流式返回
 - 多服务商支持：支持 ChatGPT、Gemini、Grok、豆包、DeepSeek、GLM、Kimi、MiniMax、Perplexity、Qwen、Z.ai 等
-- 内置聊天页：应用内对话测试页面，支持会话历史、流式输出、按会话切换模型、分叉与停止生成
+- 内置聊天页：应用内对话测试页面，支持会话历史（侧边栏可折叠）、流式输出、按会话切换模型、分叉与停止生成
+- 🆕 Token 自动续期（Kimi）：可选的 Refresh Token 令牌过期自动续期 —— 本地解析 JWT `exp`（或上游 401）判断过期，通过 `auth.kimi.com` 的 RefreshToken 接口换取新 Access Token 并重试一次，新凭据回写账号存储
 - 🆕 上下文管理：智能对话上下文管理，支持滑动窗口、Token 限制和总结压缩策略
 - 🆕 工具调用支持：通过提示词工程为所有模型提供通用工具调用能力，兼容 Cherry Studio、Kilo Code 等客户端
 - 🆕 模型映射：灵活的模型名称映射，支持通配符和首选服务商/账户选择
