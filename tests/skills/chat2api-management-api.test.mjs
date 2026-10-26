@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import { pathToFileURL } from 'node:url'
 
 const script = 'skills/chat2api-management-api/scripts/management-api.mjs'
 const skill = 'skills/chat2api-management-api/SKILL.md'
@@ -118,7 +119,19 @@ test('management skill documents one-time key warning and explicit log inclusion
 
 function runScript(args, env, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn('node', [...(options.nodeArgs || []), script, ...args], {
+    // Node's --import flag rejects bare Windows paths ("Received protocol 'd:'");
+    // convert any file-path argument following --import to a file:// URL.
+    const nodeArgs = (options.nodeArgs || []).flatMap((arg, i, all) => {
+      // URL schemes are at least 2 chars; a Windows drive letter ("D:") is 1.
+      if (i > 0 && all[i - 1] === '--import' && !/^[a-z]{2,}:/i.test(arg)) {
+        return [pathToFileURL(arg).href]
+      }
+      return [arg]
+    })
+    const child = spawn('node', [
+      ...nodeArgs,
+      script, ...args,
+    ], {
       env: {
         ...process.env,
         ...env,

@@ -25,7 +25,7 @@ import {
   createKimiChatPayload,
   encodeKimiGrpcFrame,
   resolveDeepSeekChatOptions,
-  resolveKimiScenario,
+  resolveKimiChatModel,
 } from '../../src/main/proxy/adapters/providerModelOptions.ts'
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
@@ -182,7 +182,9 @@ test('GLM, Kimi, and MiniMax built-in default models match current web providers
   assert.equal(glmConfig.modelMappings?.['GLM-5.3'], 'glm-5.3')
   assert.equal(glmConfig.modelMappings?.['GLM-5.3-flash'], 'glm-5.3-flash')
 
-  assert.deepEqual(kimiConfig.supportedModels, ['Kimi-K2.6'])
+  assert.deepEqual(kimiConfig.supportedModels, ['Kimi-K3', 'Kimi-K2.8-Preview', 'Kimi-K2.6'])
+  assert.equal(kimiConfig.modelMappings?.['Kimi-K3'], 'kimi-k3')
+  assert.equal(kimiConfig.modelMappings?.['Kimi-K2.8-Preview'], 'kimi-k28-preview')
   assert.equal(kimiConfig.modelMappings?.['Kimi-K2.6'], 'kimi-k2.6')
   assert.equal(kimiConfig.modelMappings?.['Kimi-K2.5'], undefined)
 
@@ -202,10 +204,12 @@ test('GLM, Kimi, and MiniMax built-in default models match current web providers
 })
 
 test('Kimi K2.6 model mapping reaches the web chat request payload', () => {
-  assert.deepEqual(kimiConfig.supportedModels, ['Kimi-K2.6'])
+  assert.deepEqual(kimiConfig.supportedModels, ['Kimi-K3', 'Kimi-K2.8-Preview', 'Kimi-K2.6'])
   assert.equal(kimiConfig.modelMappings?.['Kimi-K2.6'], 'kimi-k2.6')
-  assert.equal(resolveKimiScenario('kimi-k2.6'), 'SCENARIO_K2D6')
-  assert.equal(resolveKimiScenario('kimi-k2.5'), 'SCENARIO_K2D5')
+  assert.equal(resolveKimiChatModel('kimi-k2.6').scenario, 'SCENARIO_K2D6')
+  assert.equal(resolveKimiChatModel('kimi-k3').scenario, 'SCENARIO_OK_COMPUTER')
+  assert.equal(resolveKimiChatModel('kimi-k28-preview').scenario, 'SCENARIO_OK_COMPUTER')
+  assert.equal(resolveKimiChatModel('kimi-k2.5').scenario, 'SCENARIO_CHAT')
 
   const payload = createKimiChatPayload({
     model: 'kimi-k2.6',
@@ -445,7 +449,7 @@ test('README Supported Providers model lists mirror current defaults with Perple
     ['DeepSeek', deepseekConfig.supportedModels?.join(', ')],
     ['Doubao', 'doubao-pro-chat, doubao-deep-think'],
     ['Gemini', 'gemini-3.7-flash, gemini-3.6-flash, gemini-3.5-flash, gemini-3.5-flash-thinking, gemini-3.5-flash-thinking-lite, gemini-3.1-pro, gemini-auto, gemini-flash-lite'],
-    ['Grok', 'grok-4, grok-4-fast, grok-3, grok-3-mini, grok-auto'],
+    ['Grok', 'grok-4, grok-4-fast, grok-4-mini, grok-4-thinking, grok-3, grok-3-mini, grok-3-thinking, grok-auto'],
     ['GLM', glmConfig.supportedModels?.join(', ')],
     ['Kimi', kimiConfig.supportedModels?.join(', ')],
     ['MiniMax', minimaxConfig.supportedModels?.join(', ')],
