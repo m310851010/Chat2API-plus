@@ -37,8 +37,8 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { titleKey: 'nav.dashboard', href: '/', icon: LayoutDashboard },
-  { titleKey: 'nav.chat', href: '/chat', icon: MessageSquareText },
   { titleKey: 'nav.providers', href: '/providers', icon: Server },
+  { titleKey: 'nav.chat', href: '/chat', icon: MessageSquareText },
   { titleKey: 'nav.proxy', href: '/proxy', icon: Settings2 },
   { titleKey: 'nav.models', href: '/models', icon: Cpu },
   { titleKey: 'nav.session', href: '/session', icon: MessageSquare },
