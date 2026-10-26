@@ -28,6 +28,7 @@ export function Chat() {
     renameConversation,
     forkConversation,
     sendMessage,
+    editMessage,
     stopGeneration,
   } = useChatStore()
 
@@ -107,13 +108,19 @@ export function Chat() {
                 onScroll={handleScroll}
                 className="h-full overflow-y-auto overflow-x-hidden px-4 py-4 space-y-4"
               >
-                {messages.map((message) => (
+                {messages.map((message, index) => (
                   <MessageItem
                     key={message.id}
                     message={message}
                     isStreaming={
                       isStreaming && message.role === 'assistant' && message.id === messages[messages.length - 1]?.id
                     }
+                    isLast={index === messages.length - 1}
+                    canEdit={!isStreaming}
+                    onEditSubmit={(id, text) => {
+                      nearBottomRef.current = true
+                      void editMessage(id, text)
+                    }}
                   />
                 ))}
               </div>

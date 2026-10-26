@@ -1,6 +1,6 @@
-import { useState, memo } from 'react'
+import { useState, useRef, useEffect, memo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, ChevronDown, ChevronRight, Copy, Bot, User, TriangleAlert } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Copy, Bot, User, TriangleAlert, Pencil, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { renderMarkdown } from '@/lib/markdown'
 import type { ChatMessage } from '@/stores/chatStore'
@@ -15,13 +15,22 @@ function formatTime(timestamp: number): string {
 export const MessageItem = memo(function MessageItem({
   message,
   isStreaming,
+  isLast,
+  canEdit,
+  onEditSubmit,
 }: {
   message: ChatMessage
   isStreaming: boolean
+  isLast: boolean
+  canEdit: boolean
+  onEditSubmit: (messageId: string, newText: string) => void
 }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const [reasoningOpen, setReasoningOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editText, setEditText] = useState('')
+  const editRef = useRef<HTMLTextAreaElement>(null)
   const isUser = message.role === 'user'
   const isThinking = !isUser && isStreaming && !message.content && !message.reasoning
   const isThinkingActive = !isUser && isStreaming && !message.content && !!message.reasoning
@@ -36,6 +45,32 @@ export const MessageItem = memo(function MessageItem({
     }
   }
 
+  const startEdit = () => {
+    setEditText(message.content)
+    setEditing(true)
+  }
+
+  const cancelEdit = () => {
+    setEditing(false)
+    setEditText('')
+  }
+
+  // Auto-grow the textarea to fit its full content while editing
+  useEffect(() => {
+    const el = editRef.current
+    if (!editing || !el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [editing, editText])
+
+  const submitEdit = () => {
+    setEditing(false)
+    setEditText('')
+    if (editText.trim() && editText !== message.content) {
+      onEditSubmit(message.id, editText)
+    }
+  }
+
   return (
     <div className={cn('flex gap-3', isUser ? 'flex-row-reverse' : 'flex-row')}>
       <div
@@ -47,7 +82,7 @@ export const MessageItem = memo(function MessageItem({
         {isUser ? <User className="h-4 w-4 text-blue-500" /> : <Bot className="h-4 w-4 text-emerald-500" />}
       </div>
 
-      <div className={cn('max-w-[80%] min-w-0 flex flex-col gap-0.5', isUser ? 'items-end' : 'items-start')}>
+      <div className={cn('min-w-0 flex flex-col gap-0.5', isUser ? 'items-end' : 'items-start', editing && isUser ? 'w-full max-w-[80%]' : 'max-w-[80%]')}>
         <div className="flex items-center gap-2 px-1">
           <span className="text-xs text-muted-foreground">
             {isUser ? t('chat.you') : message.model || t('chat.assistant')}
@@ -55,82 +90,135 @@ export const MessageItem = memo(function MessageItem({
           <span className="text-xs text-muted-foreground/60">{formatTime(message.createdAt)}</span>
         </div>
 
-        <div
-          className={cn(
-            'rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap break-words min-w-[2rem] overflow-hidden',
-            'border border-[var(--glass-border)]',
-            isUser
-              ? 'glass-card rounded-tr-sm'
-              : message.error
-                ? 'bg-destructive/10 border-destructive/30 rounded-tl-sm text-destructive'
-                : 'glass-card rounded-tl-sm'
-          )}
-        >
-          {message.error && <TriangleAlert className="h-4 w-4 mb-1.5 inline-block mr-1 -mt-0.5" />}
-
-          {isThinkingActive ? (
-            <div className="mb-2">
+        {editing && isUser ? (
+          <>
+            <textarea
+              autoFocus
+              ref={editRef}
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  submitEdit()
+                } else if (e.key === 'Escape') {
+                  cancelEdit()
+                }
+              }}
+              className={cn(
+                'w-full rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap break-words resize-none overflow-hidden',
+                'glass-card rounded-tr-sm border border-[var(--glass-border)] bg-transparent',
+                'focus:outline-none focus:ring-1 focus:ring-blue-500/50'
+              )}
+            />
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setReasoningOpen((open) => !open)}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                onClick={cancelEdit}
+                className="p-1.5 rounded-full border border-[var(--glass-border)] flex items-center justify-center text-foreground/80 hover:text-destructive hover:border-destructive/60 transition-colors"
+                title={t('chat.editCancel')}
               >
-                {reasoningOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                <span className="inline-flex items-center gap-1.5">
-                  {t('chat.thinkingActive')}
-                  <span className="inline-flex gap-0.5 items-center">
-                    <span className="w-1 h-1 rounded-full bg-current opacity-60 animate-bounce [animation-delay:0ms]" />
-                    <span className="w-1 h-1 rounded-full bg-current opacity-60 animate-bounce [animation-delay:150ms]" />
-                    <span className="w-1 h-1 rounded-full bg-current opacity-60 animate-bounce [animation-delay:300ms]" />
-                  </span>
+                <X className="h-4 w-4" />
+              </button>
+              <button
+                onClick={submitEdit}
+                className="p-1.5 rounded-full border border-[var(--glass-border)] flex items-center justify-center text-foreground/80 hover:text-blue-500 hover:border-blue-500/60 transition-colors"
+                title={t('chat.editResend')}
+              >
+                <Check className="h-4 w-4" />
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div
+              className={cn(
+                'rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap break-words min-w-[2rem] overflow-hidden',
+                'border border-[var(--glass-border)]',
+                isUser
+                  ? 'glass-card rounded-tr-sm'
+                  : message.error
+                    ? 'bg-destructive/10 border-destructive/30 rounded-tl-sm text-destructive'
+                    : 'glass-card rounded-tl-sm'
+              )}
+            >
+              {message.error && <TriangleAlert className="h-4 w-4 mb-1.5 inline-block mr-1 -mt-0.5" />}
+
+              {isThinkingActive ? (
+                <div className="mb-2">
+                  <button
+                    onClick={() => setReasoningOpen((open) => !open)}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {reasoningOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                    <span className="inline-flex items-center gap-1.5">
+                      {t('chat.thinkingActive')}
+                      <span className="inline-flex gap-0.5 items-center">
+                        <span className="w-1 h-1 rounded-full bg-current opacity-60 animate-bounce [animation-delay:0ms]" />
+                        <span className="w-1 h-1 rounded-full bg-current opacity-60 animate-bounce [animation-delay:150ms]" />
+                        <span className="w-1 h-1 rounded-full bg-current opacity-60 animate-bounce [animation-delay:300ms]" />
+                      </span>
+                    </span>
+                  </button>
+                  {reasoningOpen && (
+                    <div className="mt-1.5 pl-3 border-l-2 border-[var(--glass-border)] text-muted-foreground text-xs whitespace-pre-wrap break-words max-h-60 overflow-y-auto">
+                      {message.reasoning}
+                    </div>
+                  )}
+                </div>
+              ) : !isUser && message.reasoning && !isStreaming && !message.content ? (
+                <div className="mb-2">
+                  <button
+                    onClick={() => setReasoningOpen((open) => !open)}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {reasoningOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                    {t('chat.thinking')}
+                  </button>
+                  {reasoningOpen && (
+                    <div className="mt-1.5 pl-3 border-l-2 border-[var(--glass-border)] text-muted-foreground text-xs whitespace-pre-wrap break-words max-h-60 overflow-y-auto">
+                      {message.reasoning}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {isThinking ? (
+                <span className="inline-flex gap-1 items-center h-4">
+                  <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60 animate-bounce [animation-delay:0ms]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60 animate-bounce [animation-delay:150ms]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60 animate-bounce [animation-delay:300ms]" />
                 </span>
-              </button>
-              {reasoningOpen && (
-                <div className="mt-1.5 pl-3 border-l-2 border-[var(--glass-border)] text-muted-foreground text-xs whitespace-pre-wrap break-words max-h-60 overflow-y-auto">
-                  {message.reasoning}
-                </div>
+              ) : isUser ? (
+                message.content
+              ) : message.error && !message.content ? (
+                <span className="text-destructive">{t('chat.emptyResponse')}</span>
+              ) : (
+                <div className="markdown-body">{renderMarkdown(message.content)}</div>
               )}
             </div>
-          ) : !isUser && message.reasoning && !isStreaming && !message.content ? (
-            <div className="mb-2">
-              <button
-                onClick={() => setReasoningOpen((open) => !open)}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {reasoningOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                {t('chat.thinking')}
-              </button>
-              {reasoningOpen && (
-                <div className="mt-1.5 pl-3 border-l-2 border-[var(--glass-border)] text-muted-foreground text-xs whitespace-pre-wrap break-words max-h-60 overflow-y-auto">
-                  {message.reasoning}
-                </div>
-              )}
-            </div>
-          ) : null}
 
-          {isThinking ? (
-            <span className="inline-flex gap-1 items-center h-4">
-              <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60 animate-bounce [animation-delay:0ms]" />
-              <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60 animate-bounce [animation-delay:150ms]" />
-              <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60 animate-bounce [animation-delay:300ms]" />
-            </span>
-          ) : isUser ? (
-            message.content
-          ) : message.error && !message.content ? (
-            <span className="text-destructive">{t('chat.emptyResponse')}</span>
-          ) : (
-            <div className="markdown-body">{renderMarkdown(message.content)}</div>
-          )}
-        </div>
-
-        {!isUser && message.content ? (
-          <button
-            onClick={handleCopy}
-            className="opacity-60 hover:opacity-100 p-1 rounded transition-opacity"
-            title={t('chat.copy')}
-          >
-            {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-          </button>
-        ) : null}
+            {message.content ? (
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={handleCopy}
+                  className="opacity-60 hover:opacity-100 p-1 rounded transition-opacity"
+                  title={t('chat.copy')}
+                >
+                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+                {isUser && canEdit && !isLast ? (
+                  <button
+                    onClick={startEdit}
+                    className="opacity-60 hover:opacity-100 p-1 rounded transition-opacity"
+                    title={t('chat.edit')}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   )

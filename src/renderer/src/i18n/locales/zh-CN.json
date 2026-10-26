@@ -56,6 +56,9 @@
     "proxyRunning": "代理运行中",
     "proxyNotRunning": "代理未运行",
     "scrollToBottom": "回到底部",
+    "edit": "编辑",
+    "editCancel": "取消",
+    "editResend": "确认并重新发送",
     "searchModels": "搜索模型…"
   },
   "dashboard": {

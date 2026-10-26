@@ -56,6 +56,9 @@
     "proxyRunning": "Proxy Running",
     "proxyNotRunning": "Proxy Not Running",
     "scrollToBottom": "Scroll to bottom",
+    "edit": "Edit",
+    "editCancel": "Cancel",
+    "editResend": "Confirm and resend",
     "searchModels": "Search models…"
   },
   "dashboard": {

@@ -48,6 +48,7 @@ interface ChatState {
   forkConversation: (id: string) => void
   clearAllConversations: () => Promise<void>
   sendMessage: (text: string) => Promise<void>
+  editMessage: (messageId: string, newText: string) => Promise<void>
   stopGeneration: (conversationId?: string) => void
   setSelectedModel: (model: string) => void
   setConversationModel: (model: string) => void
@@ -70,8 +71,109 @@ async function persistConversations(conversations: Conversation[]): Promise<void
   }
 }
 
-async function getAuthProviderHeader(): Promise<string | null> {
+// Streams a completion for an already-appended user message + assistant placeholder.
+// Shared by sendMessage and editMessage.
+async function runCompletion(
+  get: () => ChatState,
+  set: (partial: Partial<ChatState>) => void,
+  conversationId: string,
+  model: string,
+  messages: ChatMessage[],
+  assistantMessageId: string
+): Promise<void> {
+  const { proxyPort, proxyHost } = get()
+  const updateAssistant = (patch: Partial<ChatMessage>) => {
+    const nextState = get()
+    const target = nextState.conversations.find((c) => c.id === conversationId)
+    if (!target) return
+    const nextMessages = target.messages.map((msg) =>
+      msg.id === assistantMessageId ? { ...msg, ...patch } : msg
+    )
+    set({
+      conversations: nextState.conversations.map((c) =>
+        c.id === conversationId ? { ...c, messages: nextMessages } : c
+      ),
+    })
+  }
+
+  const controller = new AbortController()
+  abortControllers.set(conversationId, controller)
+
   try {
+    // Send recent history excluding the placeholder assistant message
+    const history = messages
+      .filter((msg) => msg.id !== assistantMessageId && !msg.error)
+      .slice(-MAX_HISTORY_MESSAGES)
+      .map((msg) => ({ role: msg.role, content: msg.content }))
+
+    await streamChatCompletion({
+      port: proxyPort,
+      host: proxyHost,
+      model: model,
+      messages: history,
+      signal: controller.signal,
+      onContent: (delta) => {
+        const current = get()
+          .conversations.find((c) => c.id === conversationId)
+          ?.messages.find((m) => m.id === assistantMessageId)
+        updateAssistant({ content: (current?.content || '') + delta })
+      },
+      onReasoning: (delta) => {
+        const current = get()
+          .conversations.find((c) => c.id === conversationId)
+          ?.messages.find((m) => m.id === assistantMessageId)
+        updateAssistant({ reasoning: (current?.reasoning || '') + delta })
+      },
+    })
+
+    const finalConversation = get().conversations.find((c) => c.id === conversationId)
+    const finalMessage = finalConversation?.messages.find((m) => m.id === assistantMessageId)
+    if (finalMessage && !finalMessage.content && !finalMessage.reasoning) {
+      updateAssistant({
+        error: true,
+      })
+    }
+    void persistConversations(get().conversations)
+  } catch (error) {
+    const aborted = controller.signal.aborted === true
+    const message = aborted
+      ? ''
+      : error instanceof Error
+        ? error.message
+        : String(error)
+    const current = get()
+      .conversations.find((c) => c.id === conversationId)
+      ?.messages.find((m) => m.id === assistantMessageId)
+    if (aborted) {
+      // If nothing was generated before stopping, drop the empty placeholder
+      const state = get().conversations.find((c) => c.id === conversationId)
+      if (state && !current?.content && !current?.reasoning) {
+        const cleaned = get().conversations.map((c) =>
+          c.id === conversationId
+            ? { ...c, messages: c.messages.filter((msg) => msg.id !== assistantMessageId) }
+            : c
+        )
+        set({ conversations: cleaned })
+      }
+    } else {
+      updateAssistant({
+        content: (current?.content || '') + (current?.content ? '\n\n' : '') + message,
+        error: true,
+      })
+    }
+    if (error instanceof Error && error.name !== 'AbortError') {
+      console.error('[ChatStore] Stream failed:', error, `${conversationId}:${assistantMessageId}`)
+    }
+    void persistConversations(get().conversations)
+  } finally {
+    abortControllers.delete(conversationId)
+    set({
+      streamingConversationIds: get().streamingConversationIds.filter((id) => id !== conversationId),
+    })
+  }
+}
+
+async function getAuthProviderHeader(): Promise<string | null> {  try {
     const config = await window.electronAPI.store.get<AppConfig>('config')
     if (config?.enableApiKey && Array.isArray(config.apiKeys)) {
       const enabled = config.apiKeys.find((k) => k.enabled && k.key)
@@ -413,9 +515,58 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  editMessage: async (messageId, newText) => {
+    const { conversations, activeConversationId, selectedModel } = get()
+    const conversation = conversations.find((c) => c.id === activeConversationId)
+    if (!conversation || !activeConversationId) return
+    const index = conversation.messages.findIndex((msg) => msg.id === messageId)
+    if (index === -1) return
+    const target = conversation.messages[index]
+    if (target.role !== 'user') return
+    const trimmed = newText.trim()
+    if (!trimmed) return
+    // Editing is not allowed while this conversation is generating
+    if (get().streamingConversationIds.includes(activeConversationId)) return
+
+    const now = Date.now()
+    const editedMessage: ChatMessage = { ...target, content: trimmed, createdAt: now }
+    const assistantMessage: ChatMessage = {
+      id: generateId(),
+      role: 'assistant',
+      content: '',
+      model: conversation.model || selectedModel || undefined,
+      createdAt: now + 1,
+    }
+    // Replace the message and drop everything after it
+    const updatedMessages = [...conversation.messages.slice(0, index), editedMessage, assistantMessage]
+    const updatedConversation: Conversation = {
+      ...conversation,
+      title: conversation.messages[0]?.id === messageId ? trimmed.slice(0, 40) : conversation.title,
+      updatedAt: now,
+      messages: updatedMessages,
+    }
+    const nextConversations = get().conversations.map((c) =>
+      c.id === activeConversationId ? updatedConversation : c
+    )
+    set({
+      conversations: nextConversations,
+      streamingConversationIds: [...get().streamingConversationIds, activeConversationId],
+    })
+    void persistConversations(nextConversations)
+
+    await runCompletion(
+      get,
+      set,
+      activeConversationId,
+      updatedConversation.model || selectedModel || '',
+      updatedMessages,
+      assistantMessage.id
+    )
+  },
+
   sendMessage: async (text) => {
     const trimmed = text.trim()
-    const { selectedModel, proxyPort, proxyHost } = get()
+    const { selectedModel } = get()
     if (!trimmed) return
 
     // Per-conversation model: fall back to the global selection for legacy conversations
@@ -466,98 +617,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })
     void persistConversations(conversations)
 
-    const messageKey = `${conversation.id}:${assistantMessage.id}`
-    const updateAssistant = (patch: Partial<ChatMessage>) => {
-      const nextState = get()
-      const target = nextState.conversations.find((c) => c.id === conversation!.id)
-      if (!target) return
-      const nextMessages = target.messages.map((msg) =>
-        msg.id === assistantMessage.id ? { ...msg, ...patch } : msg
-      )
-      set({
-        conversations: nextState.conversations.map((c) =>
-          c.id === conversation!.id ? { ...c, messages: nextMessages } : c
-        ),
-      })
-    }
-
-    const controller = new AbortController()
-    abortControllers.set(conversation.id, controller)
-
-    try {
-      // Send recent history excluding the placeholder assistant message
-      const history = updatedMessages
-        .filter((msg) => msg.id !== assistantMessage.id && !msg.error)
-        .slice(-MAX_HISTORY_MESSAGES)
-        .map((msg) => ({ role: msg.role, content: msg.content }))
-
-      await streamChatCompletion({
-        port: proxyPort,
-        host: proxyHost,
-        model: model,
-        messages: history,
-        signal: controller.signal,
-        onContent: (delta) => {
-          const current = get()
-            .conversations.find((c) => c.id === conversation!.id)
-            ?.messages.find((m) => m.id === assistantMessage.id)
-          updateAssistant({ content: (current?.content || '') + delta })
-        },
-        onReasoning: (delta) => {
-          const current = get()
-            .conversations.find((c) => c.id === conversation!.id)
-            ?.messages.find((m) => m.id === assistantMessage.id)
-          updateAssistant({ reasoning: (current?.reasoning || '') + delta })
-        },
-      })
-
-      const finalConversation = get().conversations.find((c) => c.id === conversation!.id)
-      const finalMessage = finalConversation?.messages.find((m) => m.id === assistantMessage.id)
-      if (finalMessage && !finalMessage.content && !finalMessage.reasoning) {
-        updateAssistant({
-          error: true,
-        })
-      }
-      void persistConversations(get().conversations)
-    } catch (error) {
-      const aborted = controller.signal.aborted === true
-      const message = aborted
-        ? ''
-        : error instanceof Error
-          ? error.message
-          : String(error)
-      const current = get()
-        .conversations.find((c) => c.id === conversation!.id)
-        ?.messages.find((m) => m.id === assistantMessage.id)
-      if (aborted) {
-        // If nothing was generated before stopping, drop the empty placeholder
-        const state = get().conversations.find((c) => c.id === conversation!.id)
-        if (state && !current?.content && !current?.reasoning) {
-          const cleaned = get().conversations.map((c) =>
-            c.id === conversation!.id
-              ? { ...c, messages: c.messages.filter((msg) => msg.id !== assistantMessage.id) }
-              : c
-          )
-          set({ conversations: cleaned })
-        }
-      } else {
-        updateAssistant({
-          content: (current?.content || '') + (current?.content ? '\n\n' : '') + message,
-          error: true,
-        })
-      }
-      if (error instanceof Error && error.name !== 'AbortError') {
-        console.error('[ChatStore] Stream failed:', error, messageKey)
-      }
-      void persistConversations(get().conversations)
-    } finally {
-      abortControllers.delete(conversation.id)
-      set({
-        streamingConversationIds: get().streamingConversationIds.filter(
-          (id) => id !== conversation!.id
-        ),
-      })
-    }
+    await runCompletion(get, set, conversation.id, model, updatedMessages, assistantMessage.id)
   },
 }))
 
